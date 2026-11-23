@@ -32,11 +32,13 @@ const Calendar = (() => {
         if (lane === -1) { lane = lanes.length; lanes.push(c1); } else lanes[lane] = c1;
         const contL = it.start < wStart;
         const contR = it.end > wEnd;
-        const cls = ['c-ev', it.type === 'entrega' ? 'ms' : '', it.done ? 'done' : '', it.late ? 'late' : '', contL ? 'cont-l' : '', contR ? 'cont-r' : ''].join(' ');
-        const tip = `${it.project ? it.project + ' — ' : ''}${it.title}${it.type === 'entrega' ? ' (entrega ' + U.fmtDate(it.start) + ')' : ' (' + U.fmtDate(it.start) + ' – ' + U.fmtDate(it.end) + ')'}`;
-        return `<button class="${cls}" data-action="edit-task" data-id="${it.id}" title="${U.esc(tip)}"
+        const cls = ['c-ev', it.type === 'entrega' ? 'ms' : '', it.type === 'reuniao' ? 'mt' : '', it.done ? 'done' : '', it.late ? 'late' : '', contL ? 'cont-l' : '', contR ? 'cont-r' : ''].join(' ');
+        const tip = it.type === 'reuniao'
+          ? `${it.project ? it.project + ' — ' : ''}Reunião ${U.fmtDate(it.start)}, ${it.time}: ${it.title.replace(/^\S+ /, '')}`
+          : `${it.project ? it.project + ' — ' : ''}${it.title}${it.type === 'entrega' ? ' (entrega ' + U.fmtDate(it.start) + ')' : ' (' + U.fmtDate(it.start) + ' – ' + U.fmtDate(it.end) + ')'}`;
+        return `<button class="${cls}" data-action="${it.action || 'edit-task'}" data-id="${it.id}" title="${U.esc(tip)}"
           style="--c:${it.color};left:calc(${c0} * 100% / 7 + 3px);width:calc(${c1 - c0 + 1} * 100% / 7 - 6px);top:${TOP + lane * LANE_H}px">
-          ${it.type === 'entrega' ? '◆ ' : ''}${U.esc(it.title)}</button>`;
+          ${it.type === 'entrega' ? '◆ ' : it.type === 'reuniao' ? '◷ ' : ''}${U.esc(it.title)}</button>`;
       }).join('');
       const height = Math.max(112, TOP + lanes.length * LANE_H + 12);
       const days = [0, 1, 2, 3, 4, 5, 6].map((i) => {

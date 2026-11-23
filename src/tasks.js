@@ -88,7 +88,8 @@ const TaskTree = (() => {
     for (const d of t.deps || []) {
       const p = byId[d];
       if (!p) continue;
-      const e = p.type === 'entrega' ? p.start : U.addDays(endOf(p), 1);
+      // Pode começar no mesmo dia em que a anterior termina (tarefas curtas encadeadas no mesmo dia).
+      const e = p.type === 'entrega' ? p.start : endOf(p);
       if (!earliest || e > earliest) earliest = e;
     }
     return earliest;

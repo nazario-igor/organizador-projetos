@@ -10,7 +10,10 @@ fica também como ícone na barra de menus (perto do relógio), com o contador d
 - **Painel** — o dia de hoje: horas trabalhadas, tarefas atrasadas, próximas entregas e a lista **☀ Foco de hoje**, com filtros por tag, projeto e prioridade.
 - **Cronograma (Gantt)** por projeto — tarefas, entregas (marcos), **subtarefas** em grupos recolhíveis e **dependências** com setas. Arraste as barras para mudar datas; quando uma tarefa atrasa, as que dependem dela são empurradas.
 - **Cronograma geral** — todos os projetos numa linha do tempo só.
-- **Calendário** — o mês com tarefas, entregas e as horas registradas em cada dia.
+- **Zoom Horas** — um dia por vez no cronograma (do projeto ou geral), com tarefas em horário, reuniões e a faixa "Dia todo" para montar o dia arrastando.
+- **Calendário** — o mês com tarefas, entregas, reuniões e as horas registradas em cada dia.
+- **Reuniões** por projeto — horário, assunto, link da chamada (Meet, Zoom, Teams), local, participantes e pauta, com
+  lembrete antes de começar e opção de lançar as horas da reunião no projeto.
 - **Horas** — botão **Rec / Pausar** na barra superior e no ícone da barra de menus. Dá para lançar ou editar horas à mão e exportar em CSV.
 - **Anotações** e **briefing** por projeto (Markdown simples nas anotações; briefing em formulário).
 - **Links** em projetos e tarefas: pastas do Drive, Docs, Figma ou pastas do próprio Mac.

@@ -142,7 +142,7 @@ const Gantt = (() => {
         const pair = `${from.id}>${to.id}`;
         if (seenPairs.has(pair)) continue;
         seenPairs.add(pair);
-        const e = p.type === 'entrega' ? p.start : U.addDays(TaskTree.endOf(p), 1);
+        const e = TaskTree.earliestStart(tasks, { deps: [p.id] }); // mesma regra do agendamento
         const bad = t.start < e;
         const gf = geo(from);
         const gt = geo(to);

@@ -74,6 +74,7 @@ function defaultState() {
     projects: [],
     tasks: [],
     notes: [],
+    meetings: [],
     timeEntries: [],
     timer: { running: false, projectId: null, taskId: null, description: '', startedAt: null },
   };
@@ -82,7 +83,7 @@ function defaultState() {
 function normalize(s) {
   const d = defaultState();
   s = Object.assign(d, s && typeof s === 'object' ? s : {});
-  for (const k of ['projects', 'tasks', 'notes', 'timeEntries']) if (!Array.isArray(s[k])) s[k] = [];
+  for (const k of ['projects', 'tasks', 'notes', 'meetings', 'timeEntries']) if (!Array.isArray(s[k])) s[k] = [];
   s.timer = Object.assign(defaultState().timer, s.timer || {});
   return s;
 }
@@ -711,6 +712,10 @@ function buildTrayMenu() {
   });
   items.push({ type: 'separator' });
   items.push({ label: `Hoje: ${hm(todayTotalMs())} registradas`, enabled: false });
+  const nm = nextMeetingToday();
+  if (nm) {
+    items.push({ label: `◷ Reunião às ${nm.m.start}: ${nm.m.title}${nm.m.link ? '  (entrar)' : ''}`, click: () => openMeeting(nm.m) });
+  }
   items.push({ type: 'separator' });
   const bases = readBases();
   if (bases.length > 1) {
@@ -734,6 +739,50 @@ function buildTrayMenu() {
   items.push({ type: 'separator' });
   items.push({ label: 'Sair', click: () => { isQuitting = true; app.quit(); } });
   tray.setContextMenu(Menu.buildFromTemplate(items));
+}
+
+// ---------- Reuniões: próxima do dia e lembretes ----------
+function meetingStartMs(m) { return new Date(`${m.date}T${m.start}:00`).getTime(); }
+function liveMeetingsMain() {
+  return (state.meetings || []).filter((m) => {
+    const p = state.projects.find((x) => x.id === m.projectId);
+    return p && !p.archived && p.status !== 'concluido' && /^\d{4}-\d{2}-\d{2}$/.test(m.date || '') && /^\d{2}:\d{2}$/.test(m.start || '');
+  });
+}
+function nextMeetingToday() {
+  const d = new Date();
+  const today = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const now = Date.now();
+  const list = liveMeetingsMain().filter((m) => m.date === today && meetingStartMs(m) > now - 15 * 60000).sort((a, b) => a.start.localeCompare(b.start));
+  return list[0] ? { m: list[0], key: `${list[0].id}@${list[0].start}` } : null;
+}
+function openMeeting(m) {
+  if (/^https?:\/\//i.test(m.link || '')) shell.openExternal(m.link); else showWindow();
+}
+const remindedMeetings = new Set();
+let lastTrayMeeting = '';
+function checkMeetings() {
+  if (!state) return;
+  const now = Date.now();
+  for (const m of liveMeetingsMain()) {
+    const mins = Number(m.remind) || 0;
+    if (mins <= 0) continue;
+    const start = meetingStartMs(m);
+    const key = `${m.id}@${m.date}T${m.start}`;
+    if (now >= start - mins * 60000 && now < start && !remindedMeetings.has(key)) {
+      remindedMeetings.add(key);
+      if (!Notification.isSupported()) continue;
+      const p = state.projects.find((x) => x.id === m.projectId);
+      const left = Math.max(1, Math.round((start - now) / 60000));
+      const n = new Notification({ title: `Reunião em ${left} min: ${m.title}`, body: `${m.start}${m.end ? '–' + m.end : ''} · ${p ? p.name : ''}${m.link ? ' · clique para entrar' : ''}` });
+      n.on('click', () => openMeeting(m));
+      n.show();
+    }
+  }
+  // O item "próxima reunião" do menu acompanha o horário.
+  const nm = nextMeetingToday();
+  const k = nm ? nm.key : '';
+  if (k !== lastTrayMeeting) { lastTrayMeeting = k; buildTrayMenu(); }
 }
 
 function createTray() {
@@ -1038,6 +1087,8 @@ if (!app.requestSingleInstanceLock()) {
     createTray();
     createWindow();
     setInterval(checkExternalChange, 60 * 1000);
+    setInterval(checkMeetings, 30 * 1000);
+    setTimeout(checkMeetings, 3000);
     setInterval(() => {
       if (state.timer.running) { state.timer.lastSeen = new Date().toISOString(); scheduleSave(); }
     }, 60 * 1000);

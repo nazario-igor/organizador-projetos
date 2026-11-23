@@ -2,6 +2,24 @@
 
 Cada versão tem uma seção `## x.y.z`. O texto dela aparece no aviso de atualização do app.
 
+## 1.3.0
+
+**Reuniões** nos projetos e **zoom Horas** no cronograma para organizar o dia.
+
+- **Zoom Horas** no cronograma do projeto e no **Cronograma geral**: um dia por vez, com ‹ Hoje › para navegar e o intervalo de horas ajustável
+- Tarefas ganham **horário opcional** (início e fim). Em tarefas de vários dias, o horário se repete em cada dia
+- Arraste as barras para mudar o horário (de 15 em 15 min) e puxe as bordas para mudar a duração
+- A faixa **☀ Dia todo** mostra as tarefas do dia sem horário: arraste para a linha do tempo para dar um horário, ou de volta para tirar
+- As reuniões e as dependências aparecem no dia; a seta fica vermelha se uma tarefa começa antes da anterior terminar
+- O painel mostra o horário (ex.: "hoje 13:00–16:00") e ordena as tarefas de hoje pelo horário
+
+- Nova aba **Reuniões** em cada projeto: data, horário, assunto, link da chamada (Meet, Zoom, Teams…), local, participantes e pauta
+- Botão **Entrar** abre a chamada direto
+- **Lembrete** antes de começar (5, 10, 15, 30 min ou 1 h), clicando nele você já entra na chamada; a próxima reunião do dia aparece no menu do ícone
+- **Lançar as horas**: quando a reunião termina, o tempo entra sozinho nas horas do projeto (agrupado como "Reuniões")
+- As reuniões aparecem no **Painel** (de hoje e próximas), no **Calendário** (◷) e no **PDF** do projeto
+- **Dependências no mesmo dia:** uma tarefa pode começar no mesmo dia em que a anterior termina (antes, era empurrada para o dia seguinte)
+
 ## 1.2.2
 
 **Ajustes** reúne tudo de configuração, e a pasta de dados pode ficar num **pendrive ou HD externo**.

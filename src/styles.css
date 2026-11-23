@@ -792,3 +792,68 @@ button.tchip:hover { border-color: color-mix(in srgb, var(--c) 50%, transparent)
 .upd-error { color: var(--danger); font-size: 13px; }
 .set-sec .check { white-space: normal; align-items: flex-start; }
 .set-sec .check input { margin-top: 3px; }
+
+/* ---------- Reuniões ---------- */
+.meet-ic { width: 18px; text-align: center; color: var(--accent-text); flex-shrink: 0; }
+.meet-join { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; font-size: 11.5px; padding: 1px 8px; color: var(--accent-text); white-space: nowrap; }
+.meet-join:hover { border-color: var(--accent); }
+.meet-list { display: flex; flex-direction: column; gap: 8px; }
+.meet-card { display: flex; align-items: center; gap: 14px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.meet-card.today:not(.past) { border-color: var(--accent); }
+.meet-card.past { opacity: .72; }
+.meet-date { width: 46px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
+.meet-date b { font-size: 20px; }
+.meet-date small { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+.meet-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left; border: 0; background: none; padding: 0; }
+.meet-title { font-weight: 600; }
+.meet-main:hover .meet-title { color: var(--accent-text); }
+.meet-meta, .meet-notes { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meet-notes { font-style: italic; }
+.meet-opts { align-items: flex-end; }
+.meet-opts .check { white-space: normal; margin-bottom: 9px; }
+.field-row .field.flex1 { flex: 1; }
+.c-ev.mt { background: transparent; border: 1px solid var(--c); border-left-width: 3px; }
+
+/* ---------- Visão Horas (um dia) ---------- */
+.dv-host { overflow: auto; }
+.dv { --lw: 260px; position: relative; min-width: 640px; }
+.dv-row { display: grid; grid-template-columns: var(--lw) 1fr; min-height: 38px; border-bottom: 1px solid var(--line-soft); }
+.dv-head { min-height: 30px; position: sticky; top: 0; background: var(--panel); z-index: 3; }
+.dv-lbl { display: flex; align-items: center; gap: 8px; padding: 0 12px; min-width: 0; border: 0; border-right: 1px solid var(--line-soft); background: none; text-align: left; font: inherit; color: inherit; }
+button.dv-lbl:hover .dv-lname { color: var(--accent-text); }
+.dv-ltext { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.dv-lname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-ltext small { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-scale { position: relative; }
+.dv-scale span { position: absolute; top: 8px; padding-left: 4px; font-size: 11px; color: var(--muted); border-left: 1px solid var(--line-soft); line-height: 14px; }
+.dv-track { position: relative; background-image: linear-gradient(90deg, var(--line-soft) 0 1px, transparent 1px); background-size: calc(100% / var(--n)) 100%; }
+.dv-allday { background: color-mix(in srgb, var(--panel) 92%, var(--text)); min-height: 44px; }
+.dv-allday.drop { outline: 2px dashed var(--accent); outline-offset: -3px; }
+.dv-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; }
+.dv-chip { border: 1px solid var(--c); border-left-width: 3px; background: var(--panel); border-radius: 6px; padding: 2px 8px; font-size: 12px; cursor: grab; max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-chip small { color: var(--muted); }
+.dv-chip.done { opacity: .5; text-decoration: line-through; }
+.dv-body { position: relative; }
+.dv-bar { position: absolute; top: 7px; height: 24px; border-radius: 6px; background: color-mix(in srgb, var(--c) 28%, var(--panel)); border: 1px solid var(--c); cursor: grab; display: flex; align-items: center; z-index: 1; min-width: 6px; }
+.dv-bar.meet { background: color-mix(in srgb, var(--c) 8%, var(--panel)); border-width: 1.5px; border-style: solid; }
+.dv-bar.done { opacity: .5; }
+.dv-bar.late { border-color: var(--warn); }
+.dv-bar.dragging { cursor: grabbing; opacity: .85; z-index: 4; }
+.dv-bar-t { flex: 1; padding: 0 8px; font-size: 11.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.dv-h { width: 7px; align-self: stretch; cursor: ew-resize; flex-shrink: 0; }
+.dv-ms { position: absolute; top: 10px; width: 18px; height: 18px; margin-left: -9px; transform: rotate(45deg); background: var(--c); border-radius: 3px; cursor: grab; z-index: 1; }
+.dv-ms.done { opacity: .45; }
+.dv-ms-t { position: absolute; top: 11px; margin-left: 14px; font-size: 11.5px; color: var(--muted); pointer-events: none; }
+.dv-empty { padding: 18px 12px; }
+.dv-links { position: absolute; inset: 0; pointer-events: none; z-index: 2; overflow: visible; }
+.dv-link { fill: none; stroke: var(--muted); stroke-width: 1.4; }
+.dv-link.bad { stroke: var(--rec); stroke-dasharray: 4 3; }
+.dv-arr-head { fill: var(--muted); } .dv-arr-head.bad { fill: var(--rec); }
+.dv-now { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--rec); opacity: .75; z-index: 3; pointer-events: none; }
+.dv-ghost { position: absolute; z-index: 10; pointer-events: none; padding: 3px 10px; border-radius: 6px; font-size: 12px; background: var(--panel); border: 1px solid var(--c); border-left-width: 3px; box-shadow: var(--shadow); white-space: nowrap; }
+.day-title { font-weight: 600; white-space: nowrap; }
+.day-title.is-today { color: var(--accent-text); }
+.day-range select { padding: 2px 4px; }
+.dv-track { overflow: hidden; }
+.dv-bar.outside { overflow: visible; }
+.dv-bar.outside .dv-bar-t { position: absolute; left: 100%; padding-left: 6px; overflow: visible; color: var(--muted); font-weight: 500; }

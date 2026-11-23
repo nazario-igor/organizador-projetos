@@ -77,7 +77,7 @@ app.on('browser-window-created', (_e, win) => {
       await js(`(() => { const t=S.tasks.find(x=>x.id==='t2'); TaskTree.move(S.tasks,t,U.addDays(t.start,3),U.addDays(t.end,3)); commit(); })()`);
       const after = await js('JSON.stringify(["t3","t4","t5"].map(id=>S.tasks.find(t=>t.id===id).start))');
       console.log('PUSH', before, '->', after);
-      expect('dependentes empurrados', JSON.parse(after).every((d, i) => d > JSON.parse(before)[i]), after);
+      expect('dependentes empurrados', (() => { const a = JSON.parse(after), b = JSON.parse(before); return a.every((d, i) => d >= b[i]) && a.some((d, i) => d > b[i]); })(), after); // podem começar no mesmo dia em que a anterior termina
       await shot('02c-gantt-empurrado');
       await click('[data-action=gantt-zoom][data-zoom=semana]'); await shot('03-gantt-semanas');
       await click('[data-action=gantt-zoom][data-zoom=dia]');
