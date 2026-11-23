@@ -89,7 +89,79 @@ function normalize(s) {
 
 function loadConfig() {
   try { config = { ...config, ...JSON.parse(fs.readFileSync(configPath(), 'utf8')) }; } catch { /* primeira execução */ }
-  if (config.dataDir && !fs.existsSync(config.dataDir)) config.dataDir = null;
+}
+
+// ---------- Pasta de dados acessível? (pendrive / HD externo podem estar desconectados) ----------
+const dirUsable = (d) => { try { return fs.statSync(d).isDirectory(); } catch { return false; } };
+const dataAvailable = () => dirUsable(dataDir());
+
+// Ao abrir: se a pasta escolhida não está acessível, pergunta antes de seguir (em vez de abrir outra pasta sem avisar).
+function ensureDataDir() {
+  while (config.dataDir && !dirUsable(config.dataDir)) {
+    const r = dialog.showMessageBoxSync({
+      type: 'warning',
+      message: 'A pasta de dados não está acessível.',
+      detail: `${config.dataDir}\n\nSe ela fica num pendrive ou HD externo, conecte o disco e clique em "Tentar de novo".`,
+      buttons: ['Tentar de novo', 'Escolher outra pasta…', 'Sair'], defaultId: 0, cancelId: 2,
+    });
+    if (r === 2) return false;
+    if (r === 1) {
+      const p = dialog.showOpenDialogSync({ title: 'Escolha a pasta de dados', buttonLabel: 'Usar esta pasta', properties: ['openDirectory', 'createDirectory'] });
+      if (p && p[0]) { config.dataDir = p[0]; saveConfig(); }
+    }
+  }
+  return true;
+}
+
+// Gravação que falhou (disco desconectado com o app aberto): guarda uma cópia na pasta do app,
+// avisa e tenta de novo a cada 10 segundos até a pasta voltar.
+const pendingFile = () => path.join(app.getPath('userData'), `organizador-nao-salvo-${currentBase}.json`);
+let saveFailed = false;
+let saveRetry = null;
+function sendDataStatus() {
+  if (win && !win.isDestroyed()) win.webContents.send('data:status', { ok: !saveFailed, dir: dataDir() });
+}
+function onSaveFailed() {
+  try {
+    fs.mkdirSync(app.getPath('userData'), { recursive: true });
+    fs.writeFileSync(pendingFile(), JSON.stringify({ ...state, savedFor: { dir: dataDir(), base: currentBase, at: new Date().toISOString() } }, null, 1));
+  } catch { /* último recurso */ }
+  if (saveFailed) return;
+  saveFailed = true;
+  if (Notification.isSupported()) {
+    new Notification({ title: 'Não consegui salvar', body: 'A pasta de dados não está acessível (disco desconectado?). Suas alterações ficam guardadas e são salvas quando ela voltar.' }).show();
+  }
+  saveRetry = setInterval(() => { if (dataAvailable()) writeNow(); }, 10 * 1000);
+  sendDataStatus();
+}
+function onSaveRecovered() {
+  saveFailed = false;
+  clearInterval(saveRetry);
+  saveRetry = null;
+  try { fs.unlinkSync(pendingFile()); } catch { /* já não existe */ }
+  if (Notification.isSupported()) new Notification({ title: 'Dados salvos', body: 'A pasta de dados voltou e as alterações foram salvas.' }).show();
+  sendDataStatus();
+}
+// Ao abrir: alterações que ficaram guardadas à parte da última vez.
+function checkPendingSave() {
+  const f = pendingFile();
+  if (!fs.existsSync(f)) return;
+  let pending;
+  try { pending = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return; }
+  const at = pending.savedFor && pending.savedFor.at;
+  const r = dialog.showMessageBoxSync({
+    type: 'warning', buttons: ['Recuperar alterações', 'Manter os dados da pasta'], defaultId: 0, cancelId: 1,
+    message: 'Há alterações que não foram salvas da última vez.',
+    detail: `Em ${fmtDate(at ? new Date(at).getTime() : 0)}, a pasta de dados não estava acessível (disco desconectado?) e o app guardou as alterações à parte.\n\n"Recuperar" substitui os dados da base “${baseName()}” por essa cópia; os dados atuais da pasta ficam guardados com a terminação ".antes-recuperar".`,
+  });
+  if (r === 0) {
+    try { if (fs.existsSync(dataFile())) fs.copyFileSync(dataFile(), `${dataFile()}.antes-recuperar-${Date.now()}.json`); } catch { /* segue */ }
+    delete pending.savedFor;
+    state = normalize(pending);
+    if (writeNow()) { try { fs.unlinkSync(f); } catch { /* ignora */ } }
+  } else {
+    try { fs.renameSync(f, f.replace(/\.json$/, `-descartado-${Date.now()}.json`)); } catch { /* ignora */ }
+  }
 }
 function saveConfig() {
   fs.mkdirSync(app.getPath('userData'), { recursive: true });
@@ -130,11 +202,21 @@ function writeNow() {
   clearTimeout(saveTimer);
   saveTimer = null;
   const f = dataFile();
-  fs.mkdirSync(path.dirname(f), { recursive: true });
-  const tmp = f + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(state, null, 1));
-  fs.renameSync(tmp, f);
-  lastWriteMtime = fs.statSync(f).mtimeMs;
+  try {
+    if (!dataAvailable()) {
+      if (config.dataDir) throw new Error('pasta de dados inacessível');
+      fs.mkdirSync(dataDir(), { recursive: true }); // pasta padrão: cria na primeira vez
+    }
+    const tmp = f + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(state, null, 1));
+    fs.renameSync(tmp, f);
+    lastWriteMtime = fs.statSync(f).mtimeMs;
+  } catch {
+    onSaveFailed();
+    return false;
+  }
+  if (saveFailed) onSaveRecovered();
+  return true;
 }
 function scheduleSave() {
   clearTimeout(saveTimer);
@@ -158,7 +240,7 @@ function dailyBackup() {
 
 // Se o arquivo mudou por fora (ex.: iCloud sincronizou do outro Mac), recarrega.
 function checkExternalChange() {
-  if (saveTimer) return;
+  if (saveTimer || saveFailed) return;
   try {
     const m = fs.statSync(dataFile()).mtimeMs;
     if (m > lastWriteMtime + 1) {
@@ -209,8 +291,13 @@ function listBases() {
   };
 }
 
+function warnUnavailable() {
+  dialog.showMessageBox(win, { type: 'warning', message: 'A pasta de dados não está acessível.', detail: `${dataDir()}\n\nSe ela fica num pendrive ou HD externo, conecte o disco de novo.` });
+}
+
 async function switchBase(id) {
   if (id === currentBase) return true;
+  if (!dataAvailable()) { warnUnavailable(); return false; }
   if (!readBases().some((b) => b.id === id)) return false;
   // Base listada mas sem arquivo (ex.: o iCloud ainda não trouxe do outro Mac): não abre vazia.
   if (id !== MAIN_BASE && !fs.existsSync(baseFile(id))) return false;
@@ -230,6 +317,7 @@ async function switchBase(id) {
 
 // Cria uma base vazia ou cópia de outra (copyFrom). Com withProfile, leva só o perfil da base atual.
 function createBase({ name, copyFrom, withProfile } = {}) {
+  if (!dataAvailable()) { warnUnavailable(); return null; }
   const list = readBases();
   const id = uid();
   let s = defaultState();
@@ -285,18 +373,6 @@ async function deleteBase(id) {
   return true;
 }
 
-// Ao trocar de pasta de dados: leva todas as bases (e a lista com os nomes) para a pasta nova.
-function copyBasesTo(dir) {
-  const list = readBases();
-  for (const b of list) {
-    if (b.id === currentBase) continue; // a base aberta é gravada depois, com writeNow
-    const from = baseFile(b.id), to = baseFile(b.id, dir);
-    if (!fs.existsSync(from) || path.resolve(from) === path.resolve(to)) continue;
-    if (fs.existsSync(to)) fs.copyFileSync(to, to + `.substituido-${Date.now()}.json`);
-    fs.copyFileSync(from, to);
-  }
-  writeBases(list, dir);
-}
 
 // ---------- Timer ----------
 function timerStart({ projectId, taskId, description } = {}) {
@@ -398,8 +474,11 @@ async function fetchLatestRelease() {
 }
 
 async function checkForUpdates({ manual = false } = {}) {
+  if (!manual && config.autoUpdate === false) return null;
   try {
     const rel = await fetchLatestRelease();
+    config.lastUpdateCheck = new Date().toISOString();
+    saveConfig();
     const latest = rel ? String(rel.tag_name || '').replace(/^v/i, '') : '';
     if (rel && latest && isNewer(latest, APP_VERSION)) {
       const dmg = (rel.assets || []).find((a) => /\.dmg$/i.test(a.name));
@@ -705,44 +784,93 @@ async function importData() {
   return true;
 }
 
-async function chooseDataDir() {
-  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
-    title: 'Escolha a pasta onde os dados ficarão (ex.: iCloud Drive)',
-    properties: ['openDirectory', 'createDirectory'],
-  });
-  if (canceled || !filePaths[0]) return false;
-  const dir = filePaths[0];
-  const target = path.join(dir, DATA_FILENAME);
-  await requestRendererFlush();
-  writeNow();
-  if (fs.existsSync(target) && path.resolve(target) !== path.resolve(dataFile())) {
+// Mover a pasta de dados (pasta sincronizada, pendrive, HD externo) ou voltar para a pasta padrão deste Mac.
+// Leva todas as bases, a lista de bases e os backups. A pasta anterior não é apagada.
+const DATA_FILE_RE = /^organizador-(dados(-[a-z0-9]+)?|bases)\.json$/i;
+function newestDataMtime(dir) {
+  let m = 0;
+  try { for (const f of fs.readdirSync(dir)) if (DATA_FILE_RE.test(f)) m = Math.max(m, fs.statSync(path.join(dir, f)).mtimeMs); } catch { /* sem dados */ }
+  return m;
+}
+const fmtDate = (ms) => (ms ? new Date(ms).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
+
+function copyDataTo(dir) {
+  const list = readBases();
+  const stamp = Date.now();
+  for (const b of list) {
+    const from = baseFile(b.id), to = baseFile(b.id, dir);
+    if (!fs.existsSync(from) || path.resolve(from) === path.resolve(to)) continue;
+    if (fs.existsSync(to)) fs.copyFileSync(to, `${to}.substituido-${stamp}.json`);
+    fs.copyFileSync(from, to);
+  }
+  writeBases(list, dir);
+  try {
+    const src = path.join(dataDir(), 'backups');
+    if (fs.existsSync(src)) fs.cpSync(src, path.join(dir, 'backups'), { recursive: true, force: false, errorOnExist: false });
+  } catch { /* backups são opcionais */ }
+}
+
+async function chooseDataDir(toDefault = false) {
+  let dir;
+  if (toDefault === true) {
+    dir = app.getPath('userData');
+  } else {
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      title: 'Escolha a nova pasta de dados',
+      message: 'Pode ser uma pasta sincronizada (iCloud Drive, Dropbox, Google Drive), um pendrive ou um HD externo.',
+      buttonLabel: 'Usar esta pasta',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (canceled || !filePaths[0]) return false;
+    dir = filePaths[0];
+  }
+  if (path.resolve(dir) === path.resolve(dataDir())) return false;
+  try { fs.accessSync(dir, fs.constants.W_OK); } catch {
+    await dialog.showMessageBox(win, {
+      type: 'warning', message: 'Não consigo gravar nessa pasta.',
+      detail: 'Escolha outra pasta ou confira o disco. Alguns pendrives e HDs vêm formatados de um jeito que o Mac só consegue ler (NTFS); nesse caso, formate como exFAT ou APFS.',
+    });
+    return false;
+  }
+  const setDir = () => { config.dataDir = toDefault === true ? null : dir; saveConfig(); };
+  const available = dataAvailable();
+  if (available) {
+    await requestRendererFlush();
+    if (state.timer.running) timerPause();
+    writeNow();
+  }
+  const theirs = newestDataMtime(dir);
+  if (!available) {
+    // A pasta atual sumiu (disco desconectado): só passa a usar a nova, sem copiar nada.
+    setDir(); loadState(); recoverTimer();
+  } else if (theirs) {
+    const mine = newestDataMtime(dataDir());
     const { response } = await dialog.showMessageBox(win, {
       type: 'question',
-      buttons: ['Usar os dados dessa pasta', 'Substituir pelos dados deste Mac', 'Cancelar'],
-      defaultId: 0, cancelId: 2,
-      message: 'Essa pasta já tem dados do Organizador.',
-      detail: 'Se você já usa o app em outro Mac com essa pasta, escolha "Usar os dados dessa pasta".',
+      buttons: ['Usar os dados dessa pasta', 'Levar os dados atuais para lá', 'Cancelar'],
+      defaultId: theirs > mine ? 0 : 1, cancelId: 2,
+      message: toDefault === true ? 'A pasta padrão deste Mac já tem dados do Organizador.' : 'Essa pasta já tem dados do Organizador.',
+      detail: `Dados dessa pasta: última alteração em ${fmtDate(theirs)}.\nDados atuais: última alteração em ${fmtDate(mine)}.\n\nSe você usa essa pasta em outro Mac, escolha "Usar os dados dessa pasta". Se levar os dados atuais, os arquivos que já estavam lá são guardados com a terminação ".substituido".`,
     });
     if (response === 2) return false;
-    if (response === 1) {
-      const mine = baseFile(currentBase, dir);
-      if (fs.existsSync(mine)) fs.copyFileSync(mine, mine + `.substituido-${Date.now()}.json`);
-      copyBasesTo(dir);
-      config.dataDir = dir; saveConfig(); writeNow();
-    } else {
-      if (state.timer.running) timerPause();
-      writeNow();
-      config.dataDir = dir; saveConfig(); loadState(); recoverTimer();
-    }
+    if (response === 0) { setDir(); loadState(); recoverTimer(); } else { copyDataTo(dir); setDir(); writeNow(); }
   } else {
-    copyBasesTo(dir);
-    config.dataDir = dir; saveConfig(); writeNow();
+    copyDataTo(dir); setDir(); writeNow();
   }
-  scheduleSave();
+  dailyBackup();
   broadcastBase();
   updateTray();
+  sendDataStatus();
   showStartupNotice();
   return true;
+}
+
+// Mostra a janela e envia um pedido para ela (esperando carregar, se acabou de ser criada).
+function sendToWindow(channel) {
+  showWindow();
+  const wc = win.webContents;
+  if (wc.isLoading()) wc.once('did-finish-load', () => setTimeout(() => wc.send(channel), 300));
+  else wc.send(channel);
 }
 
 function buildAppMenu() {
@@ -751,6 +879,7 @@ function buildAppMenu() {
       label: app.name,
       submenu: [
         { role: 'about', label: 'Sobre o Organizador de Projetos' },
+        { label: 'Ajustes…', accelerator: 'CmdOrCtrl+,', click: () => sendToWindow('settings:open') },
         { label: 'Verificar atualizações…', click: () => checkForUpdates({ manual: true }) },
         { type: 'separator' },
         { role: 'hide', label: 'Ocultar' }, { role: 'hideOthers', label: 'Ocultar outros' }, { role: 'unhide', label: 'Mostrar tudo' },
@@ -764,9 +893,9 @@ function buildAppMenu() {
         { label: 'Exportar backup…', click: exportData },
         { label: 'Importar backup…', click: importData },
         { type: 'separator' },
-        { label: 'Escolher pasta de dados…', click: chooseDataDir },
+        { label: 'Mover pasta de dados…', click: () => chooseDataDir() },
         { label: 'Mostrar pasta de dados no Finder', click: () => shell.showItemInFolder(dataFile()) },
-        { label: 'Bases de dados…', click: () => { showWindow(); win.webContents.send('bases:open'); } },
+        { label: 'Bases de dados…', click: () => sendToWindow('bases:open') },
         { type: 'separator' },
         { role: 'close', label: 'Fechar janela' },
       ],
@@ -812,7 +941,15 @@ function registerIpc() {
     saveConfig();
     return theme;
   });
-  ipcMain.handle('data:info', () => ({ file: dataFile(), dir: dataDir(), custom: !!config.dataDir, base: baseName() }));
+  ipcMain.handle('data:info', () => ({
+    file: dataFile(), dir: dataDir(), custom: !!config.dataDir, base: baseName(), bases: readBases().length,
+    external: dataDir().startsWith('/Volumes/'), available: dataAvailable(), saveFailed,
+    version: APP_VERSION, autoUpdate: config.autoUpdate !== false, lastUpdateCheck: config.lastUpdateCheck || null,
+  }));
+  ipcMain.handle('settings:set', (_e, patch) => {
+    if (patch && typeof patch.autoUpdate === 'boolean') { config.autoUpdate = patch.autoUpdate; saveConfig(); }
+    return true;
+  });
   ipcMain.handle('bases:list', listBases);
   ipcMain.handle('bases:current', () => ({ id: currentBase, name: baseName() }));
   ipcMain.handle('bases:switch', (_e, id) => switchBase(id));
@@ -821,7 +958,7 @@ function registerIpc() {
   ipcMain.handle('bases:delete', (_e, id) => deleteBase(id));
   ipcMain.handle('data:export', exportData);
   ipcMain.handle('data:import', importData);
-  ipcMain.handle('data:chooseDir', chooseDataDir);
+  ipcMain.handle('data:chooseDir', (_e, toDefault) => chooseDataDir(toDefault === true));
   ipcMain.handle('data:reveal', () => shell.showItemInFolder(dataFile()));
   // Links: endereços web abrem no navegador; caminhos do Mac (ex.: Google Drive para computador) no Finder.
   ipcMain.handle('link:open', async (_e, target) => {
@@ -884,13 +1021,15 @@ if (!app.requestSingleInstanceLock()) {
     loadConfig();
     if (config.updatedFrom) {
       if (config.updatedFrom !== APP_VERSION) {
-        startupNotice = { type: 'info', message: `Organizador atualizado para a versão ${APP_VERSION}.`, detail: 'Tudo certo: seus dados continuam como estavam. Para ver o que mudou, use Dados e backup → Ver novidades.' };
+        startupNotice = { type: 'info', message: `Organizador atualizado para a versão ${APP_VERSION}.`, detail: 'Tudo certo: seus dados continuam como estavam. Para ver o que mudou, use Ajustes → Ver novidades.' };
       }
       delete config.updatedFrom;
       saveConfig();
     }
     nativeTheme.themeSource = ['light', 'dark'].includes(config.theme) ? config.theme : 'system';
+    if (!ensureDataDir()) { app.exit(0); return; }
     loadState();
+    checkPendingSave();
     // Um timer que ficou "rodando" (app encerrado à força) é fechado no reinício, salvando o que der.
     recoverTimer();
     dailyBackup();

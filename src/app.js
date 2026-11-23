@@ -1761,31 +1761,66 @@ function entryModal(e) {
 }
 
 async function settingsModal() {
-  const info = await api.dataInfo();
+  const i = await api.dataInfo();
+  const where = i.external ? 'pendrive ou HD externo' : i.custom ? 'pasta escolhida' : 'pasta padrão deste Mac';
+  const last = i.lastUpdateCheck ? new Date(i.lastUpdateCheck).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
   modal({
-    title: 'Dados e backup',
+    title: 'Ajustes',
     wide: true,
     body: `
-      <p>A base aberta (<b>${U.esc(info.base)}</b>) fica neste arquivo:</p>
-      <p class="path">${U.esc(info.file)}</p>
-      <div class="settings-actions">
-        <button class="btn" data-action="data-reveal">Mostrar no Finder</button>
-        <button class="btn" data-action="data-export">Exportar backup…</button>
-        <button class="btn" data-action="data-import">Importar backup…</button>
-        <button class="btn" data-action="bases-open">Bases de dados…</button>
-      </div>
-      <p class="muted small">Exportar e importar valem para a base aberta.</p>
-      <h3>Usar em mais de um Mac</h3>
-      <p class="muted">Escolha uma pasta sincronizada (iCloud Drive, Dropbox, Google Drive) como pasta de dados. No outro Mac, instale o app e escolha a mesma pasta — os dois passam a usar os mesmos arquivos, com todas as bases. Evite usar o app nos dois Macs ao mesmo tempo.</p>
-      <button class="btn primary" data-action="data-dir">Escolher pasta de dados…</button>
-      <p class="muted small">O app também guarda uma cópia diária automática de cada base na subpasta <b>backups</b>.</p>
-      <h3>Versão</h3>
-      <div class="settings-actions"><span>Organizador de Projetos <b>${U.esc(await api.appVersion())}</b></span>
-        <button class="btn" data-action="update-check">Verificar atualizações</button>
-        <button class="btn" data-action="update-notes">Ver novidades</button></div>`,
+      <section class="set-sec">
+        <h3>Dados e backup</h3>
+        <p>A base aberta (<b>${U.esc(i.base)}</b>) fica neste arquivo:</p>
+        <p class="path">${U.esc(i.file)}</p>
+        <div class="settings-actions">
+          <button class="btn" data-action="data-reveal">Mostrar no Finder</button>
+          <button class="btn" data-action="data-export">Exportar backup…</button>
+          <button class="btn" data-action="data-import">Importar backup…</button>
+        </div>
+        <p class="muted small">Exportar e importar valem para a base aberta. O app também guarda uma cópia diária de cada base na subpasta <b>backups</b>.</p>
+      </section>
+      <section class="set-sec">
+        <h3>Bases de dados</h3>
+        <div class="settings-actions set-row">
+          <span>Aberta: <b>${U.esc(i.base)}</b> · ${i.bases} ${i.bases === 1 ? 'base' : 'bases'}</span>
+          <button class="btn" data-action="bases-open">Gerenciar bases…</button>
+        </div>
+      </section>
+      <section class="set-sec">
+        <h3>Pasta de dados</h3>
+        <p class="muted">Todas as bases e os backups ficam numa pasta. Ela pode ser uma pasta sincronizada (iCloud Drive, Dropbox, Google Drive), para usar em mais de um Mac, ou um pendrive ou HD externo.</p>
+        <p class="path">${U.esc(i.dir)}</p>
+        <p class="small set-where">${U.esc(where)}${i.available ? '' : ' · <b class="danger-text">inacessível agora: conecte o disco</b>'}</p>
+        <div class="settings-actions">
+          <button class="btn primary" data-action="data-dir">Mover para outra pasta…</button>
+          ${i.custom ? '<button class="btn" data-action="data-dir-default">Voltar para a pasta padrão</button>' : ''}
+        </div>
+        <p class="muted small">Ao mover, as bases e os backups são copiados para a pasta nova, e a anterior não é apagada. Com pendrive ou HD externo, conecte o disco antes de abrir o app; se ele for desconectado com o app aberto, as alterações ficam guardadas e são salvas quando ele voltar. Evite usar o app em dois Macs ao mesmo tempo.</p>
+      </section>
+      <section class="set-sec">
+        <h3>Atualizações</h3>
+        <p>Versão instalada: <b>${U.esc(i.version)}</b>${last ? ` <span class="muted small">· última verificação: ${last}</span>` : ''}</p>
+        <label class="check"><input type="checkbox" data-bind="auto-update" ${i.autoUpdate ? 'checked' : ''}> Procurar atualizações automaticamente (ao abrir, quando a internet volta e a cada 6 horas)</label>
+        <div class="settings-actions" style="margin-top:10px">
+          <button class="btn" data-action="update-check">Verificar agora</button>
+          <button class="btn" data-action="update-notes">Ver novidades</button>
+        </div>
+      </section>`,
     buttons: [{ label: 'Fechar', cls: 'primary' }],
   });
 }
+
+// Aviso na barra lateral quando a pasta de dados não está acessível (ex.: HD externo desconectado).
+function renderDataBanner(st) {
+  const el = $('#dataBanner');
+  if (!el) return;
+  el.innerHTML = st && !st.ok
+    ? `<button class="data-banner" data-action="open-settings" title="Abrir ajustes"><span>⚠︎</span><div><b>Alterações não salvas</b><small>A pasta de dados não está acessível. Reconecte o disco: o app salva sozinho quando ela voltar.</small></div></button>`
+    : '';
+}
+api.onDataStatus(renderDataBanner);
+api.dataInfo().then((i) => renderDataBanner({ ok: !i.saveFailed }));
+api.onSettingsOpen(() => settingsModal());
 
 // ---------- Bases de dados ----------
 async function basesModal() {
@@ -2149,6 +2184,7 @@ const ACTIONS = {
   'data-export': async () => { await flush(); api.exportData(); },
   'data-import': async () => { await flush(); if (await api.importData()) closeModal(); },
   'data-dir': async () => { await flush(); if (await api.chooseDataDir()) settingsModal(); },
+  'data-dir-default': async () => { await flush(); if (await api.chooseDataDir(true)) settingsModal(); },
 };
 
 document.addEventListener('click', (e) => {
@@ -2181,6 +2217,7 @@ const refreshNoteList = U.debounce(() => {
 }, 300);
 
 const BINDS = {
+  'auto-update': (el) => api.setSettings({ autoUpdate: el.checked }),
   'timer-project': async (el) => { el.blur(); await flush(); S = await api.timerUpdate({ projectId: el.value, taskId: null }); renderTimer(true); renderSidebar(); },
   'timer-task': async (el) => { await flush(); S = await api.timerUpdate({ projectId: $('#timerBox [data-bind=timer-project]').value, taskId: el.value || null }); },
   'timer-desc': (el) => { S.timer.description = el.value; timerDescUpdate(el.value); },

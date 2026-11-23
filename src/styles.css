@@ -764,6 +764,19 @@ button.tchip:hover { border-color: color-mix(in srgb, var(--c) 50%, transparent)
   border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: 9px;
   background: color-mix(in srgb, var(--accent) 12%, var(--panel)); color: var(--accent-text);
 }
+.data-banner {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; margin: 8px 0 4px; padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--line)); border-radius: 9px;
+  background: color-mix(in srgb, var(--danger) 12%, var(--panel)); color: var(--danger);
+}
+.data-banner > span { font-size: 16px; }
+.data-banner div { display: flex; flex-direction: column; line-height: 1.25; }
+.data-banner small { color: var(--muted); font-size: 11px; }
+.set-sec { padding-bottom: 6px; }
+.set-sec + .set-sec { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 2px; }
+.set-row { align-items: center; justify-content: space-between; }
+.set-where { color: var(--muted); margin: -4px 0 10px; }
+.danger-text { color: var(--danger); }
 .update-banner:hover { background: color-mix(in srgb, var(--accent) 20%, var(--panel)); }
 .update-banner > span { font-size: 16px; }
 .update-banner div { display: flex; flex-direction: column; line-height: 1.25; }
@@ -777,3 +790,5 @@ button.tchip:hover { border-color: color-mix(in srgb, var(--c) 50%, transparent)
 .upd-bar span { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 4px; transition: width .2s; }
 .upd-progress small { color: var(--muted); }
 .upd-error { color: var(--danger); font-size: 13px; }
+.set-sec .check { white-space: normal; align-items: flex-start; }
+.set-sec .check input { margin-top: 3px; }

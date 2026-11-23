@@ -2,6 +2,15 @@
 
 Cada versão tem uma seção `## x.y.z`. O texto dela aparece no aviso de atualização do app.
 
+## 1.2.2
+
+**Ajustes** reúne tudo de configuração, e a pasta de dados pode ficar num **pendrive ou HD externo**.
+
+- "Dados e backup" virou **⚙︎ Ajustes** (também com **⌘,**), com seções: Dados e backup, Bases de dados, Pasta de dados e Atualizações
+- **Mover para outra pasta** leva todas as bases e os backups (a pasta anterior não é apagada); dá para **voltar para a pasta padrão**
+- **Disco externo desconectado:** ao abrir, o app avisa e espera você conectar. Se desconectar com o app aberto, as alterações ficam guardadas, aparece um aviso na barra lateral, e o app salva sozinho quando o disco voltar
+- **Atualizações:** mostra a data da última verificação e dá para desligar a busca automática
+
 ## 1.2.1
 
 Primeira versão entregue pela **atualização dentro do app**.
