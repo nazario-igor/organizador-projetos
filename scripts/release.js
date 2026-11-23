@@ -41,7 +41,7 @@ if (!args.includes('--so-build')) {
 // O código precisa estar salvo e enviado ao GitHub: a versão publicada é marcada nesse commit.
 let targetSha = null;
 if (!args.includes('--so-build')) {
-  const git = (a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const git = (a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).replace(/\s+$/, '');
   try { git(['rev-parse', '--is-inside-work-tree']); } catch { fail('Esta pasta não é um repositório Git. Clone o projeto com git antes de publicar.'); }
   const dirty = git(['status', '--porcelain']);
   if (dirty) fail(`Há mudanças ainda não salvas no Git:\n${dirty}\n\nSalve e envie antes:  git add -A && git commit -m "Versão ${version}" && git push`);
