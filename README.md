@@ -41,11 +41,16 @@ Seus dados ficam guardados fora do app e continuam lá depois da atualização.
 
 ## Seus dados
 
-Tudo fica num único arquivo, `organizador-dados.json` (veja **Dados e backup** na barra lateral), e o app guarda
+Os dados ficam em arquivos JSON na pasta de dados (veja **Dados e backup** na barra lateral), e o app guarda
 sozinho uma cópia por dia na subpasta `backups`. Por lá também dá para exportar e importar backups.
 
+**Bases de dados:** dá para ter mais de uma base (por exemplo, uma de testes e outra de trabalho), cada uma com
+projetos, horas, tags e perfil próprios. Troque pelo seletor no topo da barra lateral ou pelo ícone na barra de menus.
+A primeira base é o arquivo `organizador-dados.json`; as outras ficam em `organizador-dados-<id>.json`, e a lista com
+os nomes em `organizador-bases.json`.
+
 **Usar em dois Macs:** em **Dados e backup → Escolher pasta de dados**, escolha uma pasta sincronizada (iCloud Drive,
-Dropbox, Google Drive) nos dois Macs. Evite usar o app nos dois ao mesmo tempo.
+Dropbox, Google Drive) nos dois Macs. Todas as bases vão junto. Evite usar o app nos dois ao mesmo tempo.
 
 Quando o Mac entra em repouso, o timer pausa sozinho para não contar horas com o computador fechado.
 

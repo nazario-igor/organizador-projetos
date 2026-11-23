@@ -2,6 +2,18 @@
 
 Cada versão tem uma seção `## x.y.z`. O texto dela aparece no aviso de atualização do app.
 
+## 1.1.0
+
+**Várias bases de dados**, com troca rápida.
+
+- Tenha bases separadas (por exemplo, **Teste** e **Meus projetos**), cada uma com projetos, tarefas, horas, tags e perfil próprios
+- Troque pelo **seletor no topo da barra lateral** ou pelo **ícone na barra de menus**
+- Crie, renomeie, duplique e exclua bases (excluir manda o arquivo para o Lixo)
+- Ao criar uma base, dá para copiar o seu perfil (logo, contatos e cor)
+- Seus dados atuais viram a primeira base, sem mudar nada no arquivo. Renomeie à vontade
+- Ao trocar com o timer ligado, ele pausa e as horas ficam na base em que foram gravadas
+- Cada base tem os próprios backups diários, e a pasta sincronizada (iCloud) leva todas as bases
+
 ## 1.0.1
 
 Correções e mais segurança para os seus dados.

@@ -3,6 +3,7 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 let S = null; // estado completo (projetos, tarefas, anotações, horas, timer)
+let BASE = null; // base de dados aberta: { id, name }
 
 // ---------- Preferências de tela (ficam só neste Mac) ----------
 const prefs = (() => {
@@ -20,7 +21,7 @@ prefs.collapsed ||= {};
 // ---------- Persistência ----------
 let saveT = null;
 function save() { clearTimeout(saveT); saveT = setTimeout(flush, 250); }
-async function flush() { clearTimeout(saveT); saveT = null; await api.setState(S); }
+async function flush() { clearTimeout(saveT); saveT = null; await api.setState(S, BASE?.id); }
 // Recalcula grupos (subtarefas) e, se ligado, empurra tarefas dependentes.
 function scheduleTasks() {
   TaskTree.normalize(S.tasks);
@@ -125,7 +126,15 @@ function render(navigated = false) {
   content.scrollTop = keepScroll;
 }
 
+function renderBaseSwitch() {
+  const el = $('#baseSwitch');
+  if (!el || !BASE) return;
+  el.innerHTML = `<button class="base-btn" data-action="bases-open" title="Trocar de base de dados">
+    <span class="base-ic">◫</span><span class="base-name">${U.esc(BASE.name)}</span><span class="base-caret">▾</span></button>`;
+}
+
 function renderSidebar() {
+  renderBaseSwitch();
   const nav = [
     ['dashboard', '◧', 'Painel'],
     ['timeline', '☰', 'Cronograma geral'],
@@ -1757,23 +1766,108 @@ async function settingsModal() {
     title: 'Dados e backup',
     wide: true,
     body: `
-      <p>Seus dados ficam em um único arquivo:</p>
+      <p>A base aberta (<b>${U.esc(info.base)}</b>) fica neste arquivo:</p>
       <p class="path">${U.esc(info.file)}</p>
       <div class="settings-actions">
         <button class="btn" data-action="data-reveal">Mostrar no Finder</button>
         <button class="btn" data-action="data-export">Exportar backup…</button>
         <button class="btn" data-action="data-import">Importar backup…</button>
+        <button class="btn" data-action="bases-open">Bases de dados…</button>
       </div>
+      <p class="muted small">Exportar e importar valem para a base aberta.</p>
       <h3>Usar em mais de um Mac</h3>
-      <p class="muted">Escolha uma pasta sincronizada (iCloud Drive, Dropbox, Google Drive) como pasta de dados. No outro Mac, instale o app e escolha a mesma pasta — os dois passam a usar o mesmo arquivo. Evite usar o app nos dois Macs ao mesmo tempo.</p>
+      <p class="muted">Escolha uma pasta sincronizada (iCloud Drive, Dropbox, Google Drive) como pasta de dados. No outro Mac, instale o app e escolha a mesma pasta — os dois passam a usar os mesmos arquivos, com todas as bases. Evite usar o app nos dois Macs ao mesmo tempo.</p>
       <button class="btn primary" data-action="data-dir">Escolher pasta de dados…</button>
-      <p class="muted small">O app também guarda uma cópia diária automática na subpasta <b>backups</b>.</p>
+      <p class="muted small">O app também guarda uma cópia diária automática de cada base na subpasta <b>backups</b>.</p>
       <h3>Versão</h3>
       <div class="settings-actions"><span>Organizador de Projetos <b>${U.esc(await api.appVersion())}</b></span>
         <button class="btn" data-action="update-check">Verificar atualizações</button></div>`,
     buttons: [{ label: 'Fechar', cls: 'primary' }],
   });
 }
+
+// ---------- Bases de dados ----------
+async function basesModal() {
+  const { bases } = await api.listBases();
+  const plural = (n, a, b) => `${n} ${n === 1 ? a : b}`;
+  modal({
+    title: 'Bases de dados',
+    wide: true,
+    body: `
+      <p class="muted small" style="margin-top:-6px">Cada base tem projetos, tarefas, horas, tags e perfil próprios. Use, por exemplo, uma base de testes e outra para o trabalho de verdade.</p>
+      <div class="base-list">${bases.map((b) => `
+        <div class="base-row${b.current ? ' current' : ''}">
+          <div class="base-info">
+            <b>${U.esc(b.name)}</b>
+            <span class="muted small">${b.missing ? 'arquivo ainda não encontrado (sincronizando?)' : `${plural(b.projects, 'projeto', 'projetos')} · ${b.hours}h registradas`}${b.main ? ' · arquivo original' : ''}</span>
+          </div>
+          <div class="base-acts">
+            ${b.current ? '<span class="base-cur">Aberta</span>' : `<button class="btn" data-action="base-open" data-id="${b.id}" ${b.missing ? 'disabled' : ''}>Abrir</button>`}
+            <button class="icon-btn" data-action="base-rename" data-id="${b.id}" title="Renomear">✎</button>
+            <button class="icon-btn" data-action="base-dup" data-id="${b.id}" title="Duplicar" ${b.missing ? 'disabled' : ''}>⧉</button>
+            ${b.main || b.current ? '<span class="base-gap"></span>' : `<button class="icon-btn danger" data-action="base-delete" data-id="${b.id}" title="Excluir (vai para o Lixo)">🗑</button>`}
+          </div>
+        </div>`).join('')}
+      </div>
+      <p class="muted small">Ao trocar de base com o timer ligado, ele é pausado e as horas ficam na base em que foram gravadas. Também dá para trocar pelo ícone na barra de menus.</p>`,
+    buttons: [
+      { label: '＋ Nova base…', cls: 'left', action: () => { newBaseModal(); return false; } },
+      { label: 'Fechar', cls: 'primary' },
+    ],
+  });
+}
+
+function newBaseModal() {
+  modal({
+    title: 'Nova base de dados',
+    body: `
+      <label class="field"><span>Nome</span><input name="name" placeholder="Ex.: Meus projetos"></label>
+      <label class="check"><input type="checkbox" name="profile" ${S.profile ? '' : 'disabled'}> Copiar o perfil (logo, contatos e cor) da base “${U.esc(BASE.name)}”</label>
+      <p class="muted small">A base nova começa vazia e já abre em seguida. A base atual continua guardada.</p>`,
+    buttons: [
+      { label: 'Cancelar', action: () => { basesModal(); return false; } },
+      { label: 'Criar e abrir', cls: 'primary', action: async (el) => {
+        const name = val(el, 'name');
+        if (!name) { $('[name=name]', el).focus(); return false; }
+        await flush();
+        const id = await api.createBase({ name, withProfile: $('[name=profile]', el).checked });
+        if (!id) return false;
+        await api.switchBase(id);
+      } },
+    ],
+  });
+}
+
+function renameBaseModal(b) {
+  modal({
+    title: 'Renomear base',
+    body: `<label class="field"><span>Nome</span><input name="name" value="${U.esc(b.name)}"></label>`,
+    buttons: [
+      { label: 'Cancelar', action: () => { basesModal(); return false; } },
+      { label: 'Salvar', cls: 'primary', action: async (el) => {
+        const name = val(el, 'name');
+        if (!name) { $('[name=name]', el).focus(); return false; }
+        await api.renameBase(b.id, name);
+        basesModal();
+        return false;
+      } },
+    ],
+  });
+}
+
+// A base aberta mudou (troca pela barra de menus, base nova, outra pasta de dados): mostra a base nova no Painel.
+api.onBaseChanged(({ state, base }) => {
+  clearTimeout(saveT); saveT = null;
+  const changedBase = !BASE || BASE.id !== base.id;
+  BASE = base;
+  S = state;
+  prepareState();
+  closeModal();
+  if (changedBase) { view = { name: 'dashboard' }; prefs.view = view; savePrefs(); }
+  render(true);
+});
+api.onBaseRenamed((base) => { BASE = base; renderBaseSwitch(); });
+api.onBasesOpen(() => basesModal());
 
 // ---------- Atualizações ----------
 let updateInfo = null;
@@ -1827,6 +1921,17 @@ const ACTIONS = {
   'edit-project': () => projectModal(proj(view.projectId)),
   'toggle-archived': () => { prefs.showArchived = !prefs.showArchived; savePrefs(); renderSidebar(); },
   'open-settings': () => settingsModal(),
+  'bases-open': () => basesModal(),
+  'base-open': async (el) => { el.disabled = true; await flush(); if (!(await api.switchBase(el.dataset.id))) { el.disabled = false; basesModal(); } },
+  'base-rename': async (el) => { const b = (await api.listBases()).bases.find((x) => x.id === el.dataset.id); if (b) renameBaseModal(b); },
+  'base-dup': async (el) => {
+    const b = (await api.listBases()).bases.find((x) => x.id === el.dataset.id);
+    if (!b) return;
+    await flush();
+    await api.createBase({ name: `${b.name} (cópia)`, copyFrom: b.id });
+    basesModal();
+  },
+  'base-delete': async (el) => { if (await api.deleteBase(el.dataset.id)) basesModal(); },
   'update-open': () => updateModal(),
   'update-check': () => { closeModal(); api.checkUpdate(); },
   theme: async (el) => { markTheme(await api.setTheme(el.dataset.theme)); },
@@ -2123,7 +2228,7 @@ setInterval(() => {
   }
 }, 1000);
 
-window.addEventListener('beforeunload', () => { if (saveT) api.setState(S); });
+window.addEventListener('beforeunload', () => { if (saveT) api.setState(S, BASE?.id); });
 
 function markTheme(theme) {
   $$('#themeSeg button').forEach((b) => b.classList.toggle('active', b.dataset.theme === theme));
@@ -2131,6 +2236,7 @@ function markTheme(theme) {
 
 (async () => {
   api.getTheme().then(markTheme);
+  BASE = await api.currentBase();
   S = await api.getState();
   prepareState();
   render(true);

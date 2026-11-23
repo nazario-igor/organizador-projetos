@@ -68,6 +68,27 @@ h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: v
   display: flex; flex-direction: column; padding: 0 10px 10px;
 }
 .sidebar-drag { height: 52px; -webkit-app-region: drag; flex-shrink: 0; }
+/* Seletor de base de dados (topo da barra lateral) */
+#baseSwitch { margin: -8px 0 10px; }
+.base-btn {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 6px 10px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--panel); font-size: 12.5px;
+}
+.base-btn:hover { background: var(--hover); }
+.base-ic { color: var(--accent); }
+.base-name { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.base-caret { color: var(--muted); font-size: 10px; }
+.base-list { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+.base-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; }
+.base-row.current { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.base-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.base-info b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.base-acts { display: flex; align-items: center; gap: 4px; }
+.base-cur { font-size: 12px; font-weight: 600; color: var(--accent-text); padding: 0 8px; min-width: 62px; text-align: center; }
+.base-acts .btn { min-width: 62px; }
+.base-gap { display: inline-block; width: 30px; }
+.icon-btn:disabled { opacity: .35; pointer-events: none; }
+
 .nav-item, .project-item {
   display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; border: 0; background: none;
   padding: 6px 10px; border-radius: 7px; margin-bottom: 1px;

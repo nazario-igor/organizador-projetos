@@ -7,7 +7,10 @@ const path = require('path');
 const fs = require('fs');
 
 const DATA_FILENAME = 'organizador-dados.json';
-let config = { dataDir: null, theme: 'system' };
+const BASES_FILENAME = 'organizador-bases.json';
+const MAIN_BASE = 'principal'; // a base de sempre: usa o arquivo original (compatível com a versão 1.0.x)
+let config = { dataDir: null, theme: 'system', activeBase: MAIN_BASE };
+let currentBase = MAIN_BASE;
 let state = null;
 let win = null;
 let tray = null;
@@ -35,7 +38,33 @@ function hm(ms) {
 // ---------- Configuração e dados ----------
 const configPath = () => path.join(app.getPath('userData'), 'config.json');
 const dataDir = () => config.dataDir || app.getPath('userData');
-const dataFile = () => path.join(dataDir(), DATA_FILENAME);
+
+// ---------- Bases de dados ----------
+// Cada base é um arquivo próprio na pasta de dados. A lista (com os nomes) fica em organizador-bases.json,
+// na mesma pasta, para valer também no outro Mac. A base "principal" é o arquivo de sempre.
+const validBaseId = (id) => typeof id === 'string' && /^[a-z0-9]{4,40}$/i.test(id);
+const baseFile = (id, dir = dataDir()) => path.join(dir, id === MAIN_BASE ? DATA_FILENAME : `organizador-dados-${id}.json`);
+const dataFile = () => baseFile(currentBase);
+const backupDir = (id = currentBase) => (id === MAIN_BASE ? path.join(dataDir(), 'backups') : path.join(dataDir(), 'backups', id));
+
+function readBases(dir = dataDir()) {
+  let list = [];
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(dir, BASES_FILENAME), 'utf8'));
+    if (Array.isArray(j.bases)) list = j.bases.filter((b) => b && validBaseId(b.id) && typeof b.name === 'string');
+  } catch { /* ainda não há lista: só a base principal */ }
+  const seen = new Set();
+  list = list.filter((b) => !seen.has(b.id) && seen.add(b.id)).map((b) => ({ id: b.id, name: b.name.trim().slice(0, 60) || 'Sem nome' }));
+  if (!list.some((b) => b.id === MAIN_BASE)) list.unshift({ id: MAIN_BASE, name: 'Principal' });
+  return list;
+}
+function writeBases(list, dir = dataDir()) {
+  fs.mkdirSync(dir, { recursive: true });
+  const f = path.join(dir, BASES_FILENAME);
+  fs.writeFileSync(f + '.tmp', JSON.stringify({ version: 1, bases: list }, null, 1));
+  fs.renameSync(f + '.tmp', f);
+}
+const baseName = (id = currentBase) => (readBases().find((b) => b.id === id) || { name: 'Principal' }).name;
 
 function defaultState() {
   return {
@@ -69,6 +98,8 @@ const readStateFile = (file) => normalize(JSON.parse(fs.readFileSync(file, 'utf8
 let startupNotice = null; // aviso mostrado quando a janela abrir (arquivo restaurado, timer recuperado)
 
 function loadState() {
+  const wanted = config.activeBase || MAIN_BASE;
+  currentBase = readBases().some((b) => b.id === wanted) ? wanted : MAIN_BASE;
   try {
     state = readStateFile(dataFile());
     lastWriteMtime = fs.statSync(dataFile()).mtimeMs;
@@ -80,10 +111,10 @@ function loadState() {
   const bad = `${dataFile()}.ilegivel-${Date.now()}.json`;
   try { fs.copyFileSync(dataFile(), bad); } catch { /* ignora */ }
   let backups = [];
-  try { backups = fs.readdirSync(path.join(dataDir(), 'backups')).filter((f) => /^organizador-.*\.json$/.test(f)).sort().reverse(); } catch { /* sem backups */ }
+  try { backups = fs.readdirSync(backupDir()).filter((f) => /^organizador-.*\.json$/.test(f)).sort().reverse(); } catch { /* sem backups */ }
   for (const f of backups) {
     try {
-      state = readStateFile(path.join(dataDir(), 'backups', f));
+      state = readStateFile(path.join(backupDir(), f));
       writeNow();
       startupNotice = { type: 'warning', message: 'O arquivo de dados estava danificado.', detail: `Restaurei automaticamente o backup ${f}. O arquivo danificado foi guardado como ${path.basename(bad)}, na pasta de dados.` };
       return;
@@ -112,13 +143,13 @@ function scheduleSave() {
 function dailyBackup() {
   try {
     if (!fs.existsSync(dataFile())) return;
-    const dir = path.join(dataDir(), 'backups');
+    const dir = backupDir();
     fs.mkdirSync(dir, { recursive: true });
     const d = new Date();
     const name = `organizador-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
     const target = path.join(dir, name);
     if (!fs.existsSync(target)) fs.copyFileSync(dataFile(), target);
-    const files = fs.readdirSync(dir).filter((f) => f.startsWith('organizador-')).sort();
+    const files = fs.readdirSync(dir).filter((f) => f.startsWith('organizador-') && f.endsWith('.json')).sort();
     while (files.length > 20) fs.unlinkSync(path.join(dir, files.shift()));
   } catch { /* backup é opcional */ }
 }
@@ -148,6 +179,121 @@ function changed() {
   scheduleSave();
   if (!muteBroadcast) broadcast();
   updateTray();
+}
+
+// A janela recebe a base nova inteira (e volta para o Painel).
+function broadcastBase() {
+  if (win && !win.isDestroyed()) win.webContents.send('base:changed', { state, base: { id: currentBase, name: baseName() } });
+}
+function showStartupNotice() {
+  if (!startupNotice || !win || win.isDestroyed() || !win.isVisible()) return;
+  const n = startupNotice;
+  startupNotice = null;
+  dialog.showMessageBox(win, { type: n.type, message: n.message, detail: n.detail });
+}
+
+function listBases() {
+  return {
+    active: currentBase,
+    bases: readBases().map((b) => {
+      const info = { ...b, main: b.id === MAIN_BASE, current: b.id === currentBase, projects: 0, hours: 0 };
+      try {
+        const s = b.id === currentBase ? state : readStateFile(baseFile(b.id));
+        info.projects = s.projects.filter((p) => !p.archived).length;
+        info.hours = Math.round(s.timeEntries.reduce((a, e) => a + (new Date(e.end) - new Date(e.start)), 0) / 3600000);
+      } catch { info.missing = !fs.existsSync(baseFile(b.id)); }
+      return info;
+    }),
+  };
+}
+
+async function switchBase(id) {
+  if (id === currentBase) return true;
+  if (!readBases().some((b) => b.id === id)) return false;
+  // Base listada mas sem arquivo (ex.: o iCloud ainda não trouxe do outro Mac): não abre vazia.
+  if (id !== MAIN_BASE && !fs.existsSync(baseFile(id))) return false;
+  await requestRendererFlush();
+  if (state.timer.running) timerPause(); // as horas ficam na base em que foram gravadas
+  writeNow();
+  config.activeBase = id;
+  saveConfig();
+  loadState();
+  recoverTimer();
+  dailyBackup();
+  broadcastBase();
+  updateTray();
+  showStartupNotice();
+  return true;
+}
+
+// Cria uma base vazia ou cópia de outra (copyFrom). Com withProfile, leva só o perfil da base atual.
+function createBase({ name, copyFrom, withProfile } = {}) {
+  const list = readBases();
+  const id = uid();
+  let s = defaultState();
+  if (copyFrom) {
+    if (!list.some((b) => b.id === copyFrom)) return null;
+    if (copyFrom === currentBase) writeNow();
+    try { s = readStateFile(baseFile(copyFrom)); } catch { return null; }
+    s.timer = { ...defaultState().timer, projectId: s.timer.projectId };
+  } else if (withProfile && state.profile) {
+    s.profile = JSON.parse(JSON.stringify(state.profile));
+  }
+  const f = baseFile(id);
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, JSON.stringify(s, null, 1));
+  list.push({ id, name: String(name || '').trim().slice(0, 60) || 'Nova base' });
+  writeBases(list);
+  buildTrayMenu();
+  return id;
+}
+
+function renameBase(id, name) {
+  const list = readBases();
+  const b = list.find((x) => x.id === id);
+  const n = String(name || '').trim().slice(0, 60);
+  if (!b || !n) return false;
+  b.name = n;
+  writeBases(list);
+  buildTrayMenu();
+  if (id === currentBase) broadcastBaseName();
+  return true;
+}
+function broadcastBaseName() {
+  if (win && !win.isDestroyed()) win.webContents.send('base:renamed', { id: currentBase, name: baseName() });
+}
+
+// Excluir manda o arquivo (e os backups da base) para o Lixo — dá para recuperar de lá.
+async function deleteBase(id) {
+  if (id === MAIN_BASE || id === currentBase) return false;
+  const list = readBases();
+  const b = list.find((x) => x.id === id);
+  if (!b) return false;
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'warning', buttons: ['Mover para o Lixo', 'Cancelar'], defaultId: 1, cancelId: 1,
+    message: `Excluir a base “${b.name}”?`,
+    detail: 'O arquivo da base e os backups dela vão para o Lixo do Mac. Enquanto você não esvaziar o Lixo, dá para recuperá-los.',
+  });
+  if (response !== 0) return false;
+  for (const p of [baseFile(id), backupDir(id)]) {
+    if (fs.existsSync(p)) { try { await shell.trashItem(p); } catch { /* segue */ } }
+  }
+  writeBases(list.filter((x) => x.id !== id));
+  buildTrayMenu();
+  return true;
+}
+
+// Ao trocar de pasta de dados: leva todas as bases (e a lista com os nomes) para a pasta nova.
+function copyBasesTo(dir) {
+  const list = readBases();
+  for (const b of list) {
+    if (b.id === currentBase) continue; // a base aberta é gravada depois, com writeNow
+    const from = baseFile(b.id), to = baseFile(b.id, dir);
+    if (!fs.existsSync(from) || path.resolve(from) === path.resolve(to)) continue;
+    if (fs.existsSync(to)) fs.copyFileSync(to, to + `.substituido-${Date.now()}.json`);
+    fs.copyFileSync(from, to);
+  }
+  writeBases(list, dir);
 }
 
 // ---------- Timer ----------
@@ -301,11 +447,7 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'src', 'index.html'));
   win.once('ready-to-show', () => {
     win.show();
-    if (startupNotice) {
-      const n = startupNotice;
-      startupNotice = null;
-      dialog.showMessageBox(win, { type: n.type, message: n.message, detail: n.detail });
-    }
+    showStartupNotice();
   });
   win.on('focus', checkExternalChange);
   win.on('close', (e) => {
@@ -385,6 +527,14 @@ function buildTrayMenu() {
   items.push({ type: 'separator' });
   items.push({ label: `Hoje: ${hm(todayTotalMs())} registradas`, enabled: false });
   items.push({ type: 'separator' });
+  const bases = readBases();
+  if (bases.length > 1) {
+    items.push({
+      label: `Base: ${baseName()}`,
+      submenu: bases.map((b) => ({ label: b.name, type: 'radio', checked: b.id === currentBase, click: () => switchBase(b.id) })),
+    });
+    items.push({ type: 'separator' });
+  }
   if (updateInfo) {
     items.push({ label: `⬆ Nova versão ${updateInfo.version} disponível`, click: () => { showWindow(); win.webContents.send('update:open'); } });
     items.push({ type: 'separator' });
@@ -415,7 +565,7 @@ async function exportData() {
   const d = new Date();
   const { canceled, filePath } = await dialog.showSaveDialog(win, {
     title: 'Exportar backup',
-    defaultPath: `organizador-backup-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`,
+    defaultPath: `organizador-backup-${currentBase === MAIN_BASE ? '' : baseName().replace(/[^\p{L}\p{N}]+/gu, '-').toLowerCase() + '-'}${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`,
     filters: [{ name: 'JSON', extensions: ['json'] }],
   });
   if (canceled || !filePath) return false;
@@ -436,7 +586,7 @@ async function importData() {
   }
   const { response } = await dialog.showMessageBox(win, {
     type: 'warning', buttons: ['Substituir', 'Cancelar'], defaultId: 1, cancelId: 1,
-    message: 'Substituir todos os dados atuais pelos do backup?',
+    message: `Substituir todos os dados da base “${baseName()}” pelos do backup?`,
     detail: `${incoming.projects.length} projeto(s), ${incoming.tasks.length} tarefa(s), ${incoming.timeEntries.length} registro(s) de horas.`,
   });
   if (response !== 0) return false;
@@ -469,17 +619,23 @@ async function chooseDataDir() {
     });
     if (response === 2) return false;
     if (response === 1) {
-      fs.copyFileSync(target, target + `.substituido-${Date.now()}.json`);
+      const mine = baseFile(currentBase, dir);
+      if (fs.existsSync(mine)) fs.copyFileSync(mine, mine + `.substituido-${Date.now()}.json`);
+      copyBasesTo(dir);
       config.dataDir = dir; saveConfig(); writeNow();
     } else {
       if (state.timer.running) timerPause();
       writeNow();
-      config.dataDir = dir; saveConfig(); loadState();
+      config.dataDir = dir; saveConfig(); loadState(); recoverTimer();
     }
   } else {
+    copyBasesTo(dir);
     config.dataDir = dir; saveConfig(); writeNow();
   }
-  changed();
+  scheduleSave();
+  broadcastBase();
+  updateTray();
+  showStartupNotice();
   return true;
 }
 
@@ -504,6 +660,7 @@ function buildAppMenu() {
         { type: 'separator' },
         { label: 'Escolher pasta de dados…', click: chooseDataDir },
         { label: 'Mostrar pasta de dados no Finder', click: () => shell.showItemInFolder(dataFile()) },
+        { label: 'Bases de dados…', click: () => { showWindow(); win.webContents.send('bases:open'); } },
         { type: 'separator' },
         { role: 'close', label: 'Fechar janela' },
       ],
@@ -518,7 +675,9 @@ function buildAppMenu() {
 // ---------- IPC ----------
 function registerIpc() {
   ipcMain.handle('state:get', () => state);
-  ipcMain.handle('state:set', (_e, s) => {
+  ipcMain.handle('state:set', (_e, s, baseId) => {
+    // Um salvamento atrasado da base anterior não pode cair na base que acabou de ser aberta.
+    if (baseId && baseId !== currentBase) return false;
     const timer = state.timer; // o timer é controlado só por aqui
     state = normalize(s);
     state.timer = timer;
@@ -542,7 +701,13 @@ function registerIpc() {
     saveConfig();
     return theme;
   });
-  ipcMain.handle('data:info', () => ({ file: dataFile(), custom: !!config.dataDir }));
+  ipcMain.handle('data:info', () => ({ file: dataFile(), dir: dataDir(), custom: !!config.dataDir, base: baseName() }));
+  ipcMain.handle('bases:list', listBases);
+  ipcMain.handle('bases:current', () => ({ id: currentBase, name: baseName() }));
+  ipcMain.handle('bases:switch', (_e, id) => switchBase(id));
+  ipcMain.handle('bases:create', (_e, opts) => createBase(opts || {}));
+  ipcMain.handle('bases:rename', (_e, id, name) => renameBase(id, name));
+  ipcMain.handle('bases:delete', (_e, id) => deleteBase(id));
   ipcMain.handle('data:export', exportData);
   ipcMain.handle('data:import', importData);
   ipcMain.handle('data:chooseDir', chooseDataDir);
