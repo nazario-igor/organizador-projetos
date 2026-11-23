@@ -1880,12 +1880,8 @@ function renderUpdateBanner() {
 }
 function updateModal() {
   if (!updateInfo) return;
-  modal({
-    title: `Nova versão ${U.esc(updateInfo.version)} disponível`,
-    wide: true,
-    body: `
-      <p class="muted small" style="margin-top:-6px">Você está na versão ${U.esc(updateInfo.current)}${updateInfo.date ? ` · publicada em ${new Date(updateInfo.date).toLocaleDateString('pt-BR')}` : ''}</p>
-      <div class="update-notes md">${U.markdown(updateInfo.notes) || '<p class="muted">Sem descrição.</p>'}</div>
+  const info = updateInfo;
+  const manualSteps = `
       <div class="update-steps">
         <b>Como instalar</b>
         <ol>
@@ -1895,13 +1891,59 @@ function updateModal() {
           <li>Abra o app. Se o Mac disser que não pôde verificá-lo, clique em OK e vá em <b>Ajustes do Sistema → Privacidade e Segurança → Abrir Mesmo Assim</b>.</li>
         </ol>
         <p class="muted small">Seus projetos, horas e configurações ficam guardados fora do app e continuam lá depois da atualização.</p>
-      </div>`,
-    buttons: [
-      { label: 'Depois' },
-      { label: 'Baixar', cls: 'primary', action: () => { api.downloadUpdate(); } },
-    ],
+      </div>`;
+  const autoBox = `
+      <div class="update-steps" id="updBox">
+        <p>Ao clicar em <b>Atualizar e reiniciar</b>, o app baixa a versão nova (${Math.round((info.zip?.size || 0) / 1048576)} MB), confere o arquivo, fecha e abre de novo já atualizado. Leva cerca de um minuto.</p>
+        <div class="upd-progress" hidden><div class="upd-bar"><span></span></div><small></small></div>
+        <p class="upd-error" hidden></p>
+        <p class="muted small">Seus projetos, horas e configurações ficam fora do app e não são tocados. Se o timer estiver ligado, ele é pausado e as horas são salvas.</p>
+      </div>`;
+  modal({
+    title: `Nova versão ${U.esc(info.version)} disponível`,
+    wide: true,
+    body: `
+      <p class="muted small" style="margin-top:-6px">Você está na versão ${U.esc(info.current)}${info.date ? ` · publicada em ${new Date(info.date).toLocaleDateString('pt-BR')}` : ''}</p>
+      <div class="update-notes md">${U.markdown(info.notes) || '<p class="muted">Sem descrição.</p>'}</div>
+      ${info.auto ? autoBox : manualSteps}`,
+    buttons: info.auto
+      ? [
+        { label: 'Baixar instalador', cls: 'left', action: () => { api.downloadUpdate(); } },
+        { label: 'Depois' },
+        { label: 'Atualizar e reiniciar', cls: 'primary', action: async (el) => {
+          const btns = $$('.modal-actions button', el);
+          btns.forEach((b) => { b.disabled = true; });
+          $('.upd-error', el).hidden = true;
+          $('.upd-progress', el).hidden = false;
+          updProgress({ phase: 'download', pct: 0 });
+          await flush();
+          const r = await api.installUpdate();
+          if (!r.ok) {
+            btns.forEach((b) => { b.disabled = false; });
+            $('.upd-progress', el).hidden = true;
+            const err = $('.upd-error', el);
+            err.hidden = false;
+            err.textContent = `Não consegui atualizar: ${r.error} Tente de novo ou use "Baixar instalador".`;
+          }
+          return false;
+        } },
+      ]
+      : [
+        { label: 'Depois' },
+        { label: 'Baixar', cls: 'primary', action: () => { api.downloadUpdate(); } },
+      ],
   });
 }
+function updProgress({ phase, pct }) {
+  const box = $('#updBox .upd-progress');
+  if (!box) return;
+  const label = { download: `Baixando… ${pct}%`, verify: 'Conferindo o arquivo…', restart: 'Reiniciando com a versão nova…', error: '' }[phase] ?? '';
+  $('span', box).style.width = `${phase === 'download' ? pct : 100}%`;
+  $('small', box).textContent = label;
+}
+api.onUpdateProgress(updProgress);
+// A internet voltou: se ainda não encontrou a versão nova, procura agora.
+window.addEventListener('online', () => api.updateOnline());
 api.onUpdate((info) => { updateInfo = info; renderUpdateBanner(); });
 api.onUpdateOpen(() => updateModal());
 api.getUpdate().then((info) => { updateInfo = info; renderUpdateBanner(); });

@@ -73,6 +73,7 @@ if (!args.includes('--so-build')) {
 }
 
 const dmg = path.join(root, 'dist', `Organizador-de-Projetos-${version}.dmg`);
+const zip = path.join(root, 'dist', `Organizador-de-Projetos-${version}.zip`); // atualização dentro do app
 if (!args.includes('--sem-build')) {
   console.log(`\n▶ Gerando o instalador da versão ${version} (Intel + Apple Silicon)…\n`);
   const r = spawnSync('npx', ['electron-builder', '--mac', '--universal', '--publish', 'never'], { cwd: root, stdio: 'inherit' });
@@ -80,12 +81,12 @@ if (!args.includes('--sem-build')) {
   // A cópia solta do app usada para montar o .dmg aparecia no Spotlight ao lado do app instalado.
   fs.rmSync(path.join(root, 'dist', 'mac-universal'), { recursive: true, force: true });
 }
-if (!fs.existsSync(dmg)) fail(`Não encontrei ${path.relative(root, dmg)}.`);
+for (const f of [dmg, zip]) if (!fs.existsSync(f)) fail(`Não encontrei ${path.relative(root, f)}.`);
 console.log(`\n✔ Instalador: ${path.relative(root, dmg)} (${(fs.statSync(dmg).size / 1048576).toFixed(0)} MB)`);
 if (args.includes('--so-build')) process.exit(0);
 
 const notesFile = path.join(os.tmpdir(), `organizador-notas-${version}.md`);
 fs.writeFileSync(notesFile, notes);
 console.log(`\n▶ Publicando v${version} em ${repo}…`);
-run(['release', 'create', `v${version}`, dmg, '--repo', repo, '--target', targetSha, '--title', `Versão ${version}`, '--notes-file', notesFile], { stdio: 'inherit' });
+run(['release', 'create', `v${version}`, dmg, zip, '--repo', repo, '--target', targetSha, '--title', `Versão ${version}`, '--notes-file', notesFile], { stdio: 'inherit' });
 console.log(`\n✔ Pronto! Os apps instalados vão avisar sobre a versão ${version} em até 6 horas (ou em "Verificar atualizações…").\n`);

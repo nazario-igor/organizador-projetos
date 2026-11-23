@@ -2,6 +2,17 @@
 
 Cada versão tem uma seção `## x.y.z`. O texto dela aparece no aviso de atualização do app.
 
+## 1.2.0
+
+**Atualização dentro do app** e **várias bases de dados**.
+
+- **Atualizar e reiniciar:** a partir desta versão, o app baixa a versão nova, confere o arquivo, se substitui e abre de novo sozinho. Não precisa mais baixar o instalador nem liberar em Privacidade e Segurança
+- O app procura atualização logo ao abrir e, se estiver sem internet, tenta de novo quando a conexão voltar
+- **Bases de dados separadas** (por exemplo, **Teste** e **Meus projetos**), cada uma com projetos, tarefas, horas, tags e perfil próprios. Troque pelo seletor no topo da barra lateral ou pelo ícone na barra de menus
+- Seus dados atuais viram a primeira base, sem mudar nada no arquivo
+
+*Esta é a última vez que a instalação é manual: baixe, feche o app e substitua em Aplicativos.*
+
 ## 1.1.0
 
 **Várias bases de dados**, com troca rápida.

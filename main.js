@@ -5,6 +5,8 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const { execFile, spawn } = require('child_process');
 
 const DATA_FILENAME = 'organizador-dados.json';
 const BASES_FILENAME = 'organizador-bases.json';
@@ -401,8 +403,15 @@ async function checkForUpdates({ manual = false } = {}) {
     const latest = rel ? String(rel.tag_name || '').replace(/^v/i, '') : '';
     if (rel && latest && isNewer(latest, APP_VERSION)) {
       const dmg = (rel.assets || []).find((a) => /\.dmg$/i.test(a.name));
+      const zipAsset = (rel.assets || []).find((a) => /\.zip$/i.test(a.name));
+      const sha = zipAsset && /^sha256:([0-9a-f]{64})$/i.exec(zipAsset.digest || '');
+      const zip = sha ? { url: zipAsset.browser_download_url, size: zipAsset.size, sha256: sha[1].toLowerCase() } : null;
       const isNew = !updateInfo || updateInfo.version !== latest;
-      updateInfo = { version: latest, current: APP_VERSION, notes: rel.body || '', name: rel.name || `Versão ${latest}`, url: dmg ? dmg.browser_download_url : rel.html_url, page: rel.html_url, date: rel.published_at };
+      updateInfo = {
+        version: latest, current: APP_VERSION, notes: rel.body || '', name: rel.name || `Versão ${latest}`,
+        url: dmg ? dmg.browser_download_url : rel.html_url, page: rel.html_url, date: rel.published_at,
+        zip, auto: !!zip && canSelfUpdate(),
+      };
       if (win && !win.isDestroyed()) win.webContents.send('update:available', updateInfo);
       buildTrayMenu();
       if (isNew && !manual && Notification.isSupported()) {
@@ -421,8 +430,105 @@ async function checkForUpdates({ manual = false } = {}) {
     }
   } catch (e) {
     if (manual) dialog.showMessageBox(win, { type: 'warning', message: 'Não consegui verificar atualizações.', detail: `Confira a internet e tente de novo.\n(${e.message})` });
+    // Provavelmente sem internet: tenta de novo em 2 minutos (e quando a janela avisar que a conexão voltou).
+    else { clearTimeout(updateRetry); updateRetry = setTimeout(() => checkForUpdates(), 2 * 60 * 1000); }
   }
   return null;
+}
+let updateRetry = null;
+
+// ---------- Atualização dentro do app ----------
+// Baixa o .zip da versão nova, confere o código SHA-256 publicado pelo GitHub, descompacta, confere versão e
+// assinatura e, depois que o app fecha, um pequeno script troca o app antigo pelo novo e abre de novo.
+const BUNDLE_ID = 'br.local.organizador-projetos';
+const execFileP = (cmd, args) => new Promise((resolve, reject) =>
+  execFile(cmd, args, (err, stdout, stderr) => (err ? reject(new Error(String(stderr || err.message).trim())) : resolve(String(stdout).trim()))));
+
+function appBundlePath() {
+  if (process.env.ORGANIZADOR_UPDATE_TARGET) return process.env.ORGANIZADOR_UPDATE_TARGET; // testes
+  if (!app.isPackaged) return null;
+  const p = path.resolve(process.execPath, '..', '..', '..');
+  return p.endsWith('.app') ? p : null;
+}
+function canSelfUpdate() {
+  const p = appBundlePath();
+  // Aberto direto do .dmg ou de uma pasta sem permissão de escrita: só dá para baixar o instalador.
+  if (!p || p.startsWith('/Volumes/') || p.includes('/AppTranslocation/')) return false;
+  try { fs.accessSync(path.dirname(p), fs.constants.W_OK); fs.accessSync(p, fs.constants.W_OK); return true; } catch { return false; }
+}
+
+// Espera o app fechar, troca as pastas (voltando a antiga se algo falhar) e abre a versão nova.
+const SWAP_SCRIPT = `
+PID="$1"; OLD="$2"; NEW="$3"; BAK="$4"; UD="$5"
+i=0
+while kill -0 "$PID" 2>/dev/null && [ $i -lt 120 ]; do sleep 0.5; i=$((i+1)); done
+if mv "$OLD" "$BAK"; then
+  if mv "$NEW" "$OLD"; then rm -rf "$BAK"; else mv "$BAK" "$OLD"; fi
+fi
+/usr/bin/xattr -dr com.apple.quarantine "$OLD" 2>/dev/null
+if [ -n "$UD" ]; then /usr/bin/open "$OLD" --env "ORGANIZADOR_USER_DATA=$UD" --env ORGANIZADOR_NO_UPDATE=1
+else /usr/bin/open "$OLD"; fi
+`;
+
+let installing = false;
+async function installUpdate() {
+  if (installing || !updateInfo || !updateInfo.auto) return { ok: false, error: 'Atualização automática indisponível.' };
+  installing = true;
+  const info = updateInfo;
+  const send = (phase, pct = 0) => { if (win && !win.isDestroyed()) win.webContents.send('update:progress', { phase, pct }); };
+  const work = path.join(app.getPath('temp'), `organizador-atualizacao-${info.version}-${Date.now()}`);
+  try {
+    const target = appBundlePath();
+    fs.mkdirSync(work, { recursive: true });
+    const zipFile = path.join(work, 'app.zip');
+    // 1. Baixa, calculando o código de verificação durante o download
+    send('download', 0);
+    const { net } = require('electron');
+    const res = await net.fetch(info.zip.url);
+    if (!res.ok) throw new Error(`O download falhou (GitHub respondeu ${res.status}).`);
+    const total = Number(res.headers.get('content-length')) || info.zip.size || 0;
+    const hash = crypto.createHash('sha256');
+    const out = fs.createWriteStream(zipFile);
+    const reader = res.body.getReader();
+    let got = 0, lastPct = -1;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      hash.update(value);
+      got += value.length;
+      if (!out.write(value)) await new Promise((r) => out.once('drain', r));
+      const pct = total ? Math.min(100, Math.floor((got * 100) / total)) : 0;
+      if (pct !== lastPct) { lastPct = pct; send('download', pct); }
+    }
+    await new Promise((resolve, reject) => out.end((err) => (err ? reject(err) : resolve())));
+    if (hash.digest('hex') !== info.zip.sha256) throw new Error('O arquivo baixado não confere com o publicado (pode ter sido corrompido no caminho).');
+    // 2. Descompacta e confere
+    send('verify');
+    const ext = path.join(work, 'novo');
+    await execFileP('/usr/bin/ditto', ['-x', '-k', zipFile, ext]);
+    fs.rmSync(zipFile, { force: true });
+    const apps = fs.readdirSync(ext).filter((f) => f.endsWith('.app'));
+    if (apps.length !== 1) throw new Error('O pacote baixado não tem o app esperado.');
+    const newApp = path.join(ext, apps[0]);
+    const plist = path.join(newApp, 'Contents', 'Info.plist');
+    const ver = await execFileP('/usr/bin/plutil', ['-extract', 'CFBundleShortVersionString', 'raw', plist]);
+    const bid = await execFileP('/usr/bin/plutil', ['-extract', 'CFBundleIdentifier', 'raw', plist]);
+    if (ver !== info.version || bid !== BUNDLE_ID) throw new Error(`O pacote baixado não é a versão esperada (${ver}).`);
+    await execFileP('/usr/bin/codesign', ['--verify', '--deep', newApp]);
+    // 3. Troca depois de fechar
+    send('restart');
+    config.updatedFrom = APP_VERSION;
+    saveConfig();
+    spawn('/bin/sh', ['-c', SWAP_SCRIPT, 'sh', String(process.pid), target, newApp, path.join(work, 'anterior.app'), process.env.ORGANIZADOR_USER_DATA || ''],
+      { detached: true, stdio: 'ignore' }).unref();
+    setTimeout(() => { isQuitting = true; app.quit(); }, 600);
+    return { ok: true };
+  } catch (e) {
+    installing = false;
+    try { fs.rmSync(work, { recursive: true, force: true }); } catch { /* ignora */ }
+    send('error');
+    return { ok: false, error: e.message };
+  }
 }
 
 // ---------- Janela ----------
@@ -693,6 +799,8 @@ function registerIpc() {
   ipcMain.handle('update:get', () => updateInfo);
   ipcMain.handle('update:check', () => checkForUpdates({ manual: true }));
   ipcMain.handle('update:download', () => { if (updateInfo) shell.openExternal(updateInfo.url); return !!updateInfo; });
+  ipcMain.handle('update:install', installUpdate);
+  ipcMain.handle('update:online', () => { if (!updateInfo) checkForUpdates(); });
   ipcMain.handle('theme:get', () => config.theme || 'system');
   ipcMain.handle('theme:set', (_e, theme) => {
     if (!['system', 'light', 'dark'].includes(theme)) return config.theme;
@@ -771,6 +879,13 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     app.setName('Organizador de Projetos');
     loadConfig();
+    if (config.updatedFrom) {
+      if (config.updatedFrom !== APP_VERSION) {
+        startupNotice = { type: 'info', message: `Organizador atualizado para a versão ${APP_VERSION}.`, detail: 'Tudo certo: seus dados continuam como estavam. As novidades estão em Dados e backup → Versão.' };
+      }
+      delete config.updatedFrom;
+      saveConfig();
+    }
     nativeTheme.themeSource = ['light', 'dark'].includes(config.theme) ? config.theme : 'system';
     loadState();
     // Um timer que ficou "rodando" (app encerrado à força) é fechado no reinício, salvando o que der.
@@ -784,8 +899,9 @@ if (!app.requestSingleInstanceLock()) {
     setInterval(() => {
       if (state.timer.running) { state.timer.lastSeen = new Date().toISOString(); scheduleSave(); }
     }, 60 * 1000);
-    // Procura versão nova 15 s depois de abrir e depois a cada 6 horas.
-    setTimeout(() => checkForUpdates(), 15 * 1000);
+    // Procura versão nova logo depois de abrir e depois a cada 6 horas (sem internet, tenta de novo depois).
+    setTimeout(() => checkForUpdates(), 5 * 1000);
+    powerMonitor.on('resume', () => setTimeout(() => checkForUpdates(), 20 * 1000));
     setInterval(() => checkForUpdates(), 6 * 60 * 60 * 1000);
 
     // Ao entrar em repouso, pausa o timer para não contar horas com o Mac fechado.

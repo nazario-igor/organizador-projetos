@@ -771,3 +771,9 @@ button.tchip:hover { border-color: color-mix(in srgb, var(--c) 50%, transparent)
 .update-notes { max-height: 260px; overflow-y: auto; background: var(--hover); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; }
 .update-steps ol { margin: 6px 0 6px 0; padding-left: 20px; }
 .update-steps li { margin-bottom: 3px; }
+.upd-progress { margin: 10px 0 6px; display: flex; flex-direction: column; gap: 6px; }
+.upd-progress[hidden], .upd-error[hidden] { display: none; }
+.upd-bar { height: 8px; border-radius: 4px; background: var(--hover); overflow: hidden; }
+.upd-bar span { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 4px; transition: width .2s; }
+.upd-progress small { color: var(--muted); }
+.upd-error { color: var(--danger); font-size: 13px; }

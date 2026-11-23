@@ -1,7 +1,7 @@
 {
   "name": "organizador-projetos",
   "productName": "Organizador de Projetos",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Organizador de projetos com Gantt, calendário, anotações, briefing e contador de horas",
   "license": "GPL-3.0-or-later",
   "author": "nazario-igor",
@@ -38,7 +38,8 @@
       "category": "public.app-category.productivity",
       "icon": "build/icon.icns",
       "target": [
-        "dmg"
+        "dmg",
+        "zip"
       ],
       "identity": "-",
       "artifactName": "Organizador-de-Projetos-${version}.${ext}",

@@ -24,7 +24,7 @@ fica também como ícone na barra de menus (perto do relógio), com o contador d
 2. Abra o `.dmg` e arraste o **Organizador de Projetos** para a pasta **Aplicativos**.
 3. Abra o app. Como ele não tem a assinatura paga da Apple, o Mac vai avisar que não pôde verificá-lo — clique em **OK**
    (ou **Concluído**), vá em **Ajustes do Sistema → Privacidade e Segurança**, role até o aviso sobre o Organizador de
-   Projetos e clique em **Abrir Mesmo Assim**. Isso só é preciso na primeira vez (e depois de cada atualização).
+   Projetos e clique em **Abrir Mesmo Assim**. Isso só é preciso na primeira vez.
 
 Fechar a janela não encerra o app: ele continua no ícone da barra de menus. Para sair, use **Sair** nesse menu ou ⌘Q.
 
@@ -32,10 +32,13 @@ Atalhos: ⌘N nova tarefa · ⌘⇧N novo projeto · ⌘. Rec/Pausar.
 
 ## Atualizar
 
-O app procura versão nova ao abrir e a cada 6 horas. Quando encontra, avisa com uma notificação, um destaque na
-barra lateral e no menu do ícone, mostrando o que mudou. Baixe o novo `.dmg`, feche o app e substitua o antigo em
-**Aplicativos** (depois, libere em **Privacidade e Segurança** como na instalação). Também dá para verificar pelo menu
-**Organizador de Projetos → Verificar atualizações…**
+O app procura versão nova ao abrir, a cada 6 horas e quando a internet volta. Quando encontra, avisa com uma
+notificação, um destaque na barra lateral e no menu do ícone, mostrando o que mudou. Clique em **Atualizar e
+reiniciar**: o app baixa a versão nova, confere o arquivo (código SHA-256 publicado pelo GitHub), fecha, se substitui
+e abre de novo. Também dá para verificar pelo menu **Organizador de Projetos → Verificar atualizações…**
+
+Se o app não puder se atualizar sozinho (por exemplo, aberto direto do `.dmg`), o aviso oferece o instalador para
+baixar e substituir à mão. Versões anteriores à 1.2.0 também precisam dessa instalação manual uma última vez.
 
 Seus dados ficam guardados fora do app e continuam lá depois da atualização.
 
