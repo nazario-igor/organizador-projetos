@@ -1,0 +1,27 @@
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
+
+contextBridge.exposeInMainWorld('api', {
+  getState: () => ipcRenderer.invoke('state:get'),
+  setState: (s) => ipcRenderer.invoke('state:set', s),
+  onState: (cb) => ipcRenderer.on('state:changed', (_e, s) => cb(s)),
+  timerStart: (opts) => ipcRenderer.invoke('timer:start', opts),
+  timerPause: () => ipcRenderer.invoke('timer:pause'),
+  timerUpdate: (patch) => ipcRenderer.invoke('timer:update', patch),
+  appVersion: () => ipcRenderer.invoke('app:version'),
+  getUpdate: () => ipcRenderer.invoke('update:get'),
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  onUpdate: (cb) => ipcRenderer.on('update:available', (_e, info) => cb(info)),
+  onUpdateOpen: (cb) => ipcRenderer.on('update:open', () => cb()),
+  getTheme: () => ipcRenderer.invoke('theme:get'),
+  setTheme: (t) => ipcRenderer.invoke('theme:set', t),
+  openLink: (target) => ipcRenderer.invoke('link:open', target),
+  pathForFile: (file) => webUtils.getPathForFile(file),
+  dataInfo: () => ipcRenderer.invoke('data:info'),
+  exportData: () => ipcRenderer.invoke('data:export'),
+  importData: () => ipcRenderer.invoke('data:import'),
+  chooseDataDir: () => ipcRenderer.invoke('data:chooseDir'),
+  revealData: () => ipcRenderer.invoke('data:reveal'),
+  saveText: (content, defaultName, ext) => ipcRenderer.invoke('file:saveText', { content, defaultName, ext }),
+  savePdf: (defaultName, opts = {}) => ipcRenderer.invoke('file:savePdf', { defaultName, ...opts }),
+});

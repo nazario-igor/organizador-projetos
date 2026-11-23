@@ -1,0 +1,58 @@
+{
+  "name": "organizador-projetos",
+  "productName": "Organizador de Projetos",
+  "version": "1.0.0",
+  "description": "Organizador de projetos com Gantt, calendário, anotações, briefing e contador de horas",
+  "license": "GPL-3.0-or-later",
+  "author": "nazario-igor",
+  "homepage": "https://github.com/nazario-igor/organizador-projetos",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nazario-igor/organizador-projetos.git"
+  },
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "icons": "electron scripts/make-icons.js",
+    "dist": "electron-builder --mac --universal",
+    "dist:arm": "electron-builder --mac --arm64",
+    "release": "node scripts/release.js"
+  },
+  "build": {
+    "appId": "br.local.organizador-projetos",
+    "productName": "Organizador de Projetos",
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "assets/**/*"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
+      "target": [
+        "dmg"
+      ],
+      "identity": "-",
+      "artifactName": "Organizador-de-Projetos-${version}.${ext}",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "title": "Organizador de Projetos ${version}",
+      "artifactName": "Organizador-de-Projetos-${version}.dmg"
+    }
+  },
+  "devDependencies": {
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0"
+  },
+  "updates": {
+    "repo": "nazario-igor/organizador-projetos"
+  }
+}

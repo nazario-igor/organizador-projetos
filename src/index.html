@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:">
+  <title>Organizador de Projetos</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="sidebar-drag"></div>
+      <nav id="mainNav"></nav>
+      <div class="section-title">
+        <button class="section-link" id="projectsLink" data-action="nav" data-view="projects" title="Administrar projetos">Projetos <span class="sl-arrow">›</span></button>
+        <button class="icon-btn" data-action="new-project" title="Novo projeto">＋</button>
+      </div>
+      <div id="projectList"></div>
+      <div id="updateBanner"></div>
+      <div class="sidebar-footer">
+        <div class="seg theme-seg" id="themeSeg" title="Aparência">
+          <button data-action="theme" data-theme="light" title="Modo claro">☀︎ Claro</button>
+          <button data-action="theme" data-theme="dark" title="Modo escuro">☾ Escuro</button>
+          <button data-action="theme" data-theme="system" title="Seguir o macOS">Auto</button>
+        </div>
+        <button class="link-btn" data-action="toggle-archived" id="btnArchived"></button>
+        <button class="link-btn" data-action="open-settings">⚙︎ Dados e backup</button>
+        <button class="link-btn" data-action="nav" data-view="profile" id="profileLink">👤 Perfil</button>
+      </div>
+    </aside>
+    <main>
+      <header id="topbar">
+        <div id="viewTitle"></div>
+        <div id="timerBox"></div>
+      </header>
+      <section id="content"></section>
+    </main>
+  </div>
+  <div id="modalRoot"></div>
+  <div id="printRoot"></div>
+  <script src="util.js"></script>
+  <script src="tasks.js"></script>
+  <script src="gantt.js"></script>
+  <script src="calendar.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
