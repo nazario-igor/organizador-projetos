@@ -65,17 +65,32 @@ function saveConfig() {
   fs.writeFileSync(configPath(), JSON.stringify(config, null, 2));
 }
 
+const readStateFile = (file) => normalize(JSON.parse(fs.readFileSync(file, 'utf8')));
+let startupNotice = null; // aviso mostrado quando a janela abrir (arquivo restaurado, timer recuperado)
+
 function loadState() {
   try {
-    state = normalize(JSON.parse(fs.readFileSync(dataFile(), 'utf8')));
+    state = readStateFile(dataFile());
     lastWriteMtime = fs.statSync(dataFile()).mtimeMs;
+    return;
   } catch (e) {
-    if (e.code !== 'ENOENT') {
-      // Arquivo ilegível: guarda uma cópia antes de seguir com dados vazios.
-      try { fs.copyFileSync(dataFile(), dataFile() + `.ilegivel-${Date.now()}.json`); } catch { /* ignora */ }
-    }
-    state = defaultState();
+    if (e.code === 'ENOENT') { state = defaultState(); return; }
   }
+  // Arquivo ilegível: guarda uma cópia e tenta o backup diário mais recente que esteja bom.
+  const bad = `${dataFile()}.ilegivel-${Date.now()}.json`;
+  try { fs.copyFileSync(dataFile(), bad); } catch { /* ignora */ }
+  let backups = [];
+  try { backups = fs.readdirSync(path.join(dataDir(), 'backups')).filter((f) => /^organizador-.*\.json$/.test(f)).sort().reverse(); } catch { /* sem backups */ }
+  for (const f of backups) {
+    try {
+      state = readStateFile(path.join(dataDir(), 'backups', f));
+      writeNow();
+      startupNotice = { type: 'warning', message: 'O arquivo de dados estava danificado.', detail: `Restaurei automaticamente o backup ${f}. O arquivo danificado foi guardado como ${path.basename(bad)}, na pasta de dados.` };
+      return;
+    } catch { /* tenta o próximo */ }
+  }
+  state = defaultState();
+  startupNotice = { type: 'warning', message: 'O arquivo de dados estava danificado.', detail: `Não encontrei um backup válido, então o app começou vazio. O arquivo danificado foi guardado como ${path.basename(bad)}; use "Importar backup…" se tiver uma cópia.` };
 }
 
 function writeNow() {
@@ -114,7 +129,12 @@ function checkExternalChange() {
   try {
     const m = fs.statSync(dataFile()).mtimeMs;
     if (m > lastWriteMtime + 1) {
-      loadState();
+      let incoming;
+      try { incoming = readStateFile(dataFile()); } catch { return; } // ainda sincronizando: tenta de novo depois
+      const timer = state.timer;
+      state = incoming;
+      if (timer.running) state.timer = timer;
+      lastWriteMtime = m;
       broadcast();
       updateTray();
     }
@@ -141,6 +161,7 @@ function timerStart({ projectId, taskId, description } = {}) {
     taskId: taskId !== undefined ? taskId : (pid === state.timer.projectId ? state.timer.taskId : null),
     description: description !== undefined ? description : (pid === state.timer.projectId ? state.timer.description : ''),
     startedAt: new Date().toISOString(),
+    lastSeen: new Date().toISOString(),
   };
   changed();
 }
@@ -149,14 +170,42 @@ function timerPause() {
   const t = state.timer;
   if (!t.running) return;
   const end = new Date();
-  if (end - new Date(t.startedAt) >= 1000) {
+  // Trechos com menos de 30 segundos (Rec e Pausar sem querer) não viram registro.
+  if (end - new Date(t.startedAt) >= 30 * 1000) {
     state.timeEntries.push({
       id: uid(), projectId: t.projectId, taskId: t.taskId || null,
       description: t.description || '', start: t.startedAt, end: end.toISOString(),
     });
   }
-  state.timer = { ...t, running: false, startedAt: null };
+  state.timer = { ...t, running: false, startedAt: null, lastSeen: null };
   changed();
+}
+
+// O app foi fechado à força com o timer ligado: salva o trecho até a última marca (gravada a cada minuto).
+function recoverTimer() {
+  const t = state.timer;
+  if (!t.running) return;
+  const end = t.lastSeen ? new Date(t.lastSeen) : null;
+  if (end && end - new Date(t.startedAt) >= 60 * 1000) {
+    state.timeEntries.push({ id: uid(), projectId: t.projectId, taskId: t.taskId || null, description: t.description || '', start: t.startedAt, end: end.toISOString() });
+    startupNotice ||= {
+      type: 'info', message: 'O timer estava ligado quando o app foi fechado.',
+      detail: `Salvei as horas até ${pad(end.getHours())}:${pad(end.getMinutes())}, o último momento registrado. Confira em Horas e ajuste se precisar.`,
+    };
+  }
+  state.timer = { ...t, running: false, startedAt: null, lastSeen: null };
+  scheduleSave();
+}
+
+// Pede para a janela salvar o que ainda não salvou (espera no máximo 1 segundo).
+function requestRendererFlush(timeout = 1000) {
+  return new Promise((resolve) => {
+    if (!win || win.isDestroyed()) { resolve(); return; }
+    const done = () => { clearTimeout(timer); ipcMain.removeListener('app:flushed', done); resolve(); };
+    const timer = setTimeout(done, timeout);
+    ipcMain.once('app:flushed', done);
+    win.webContents.send('app:flush');
+  });
 }
 
 function timerUpdate(patch) {
@@ -190,7 +239,7 @@ function isNewer(a, b) {
 async function fetchLatestRelease() {
   // Para testes: ORGANIZADOR_UPDATE_TEST aponta para um JSON no formato da API do GitHub.
   if (process.env.ORGANIZADOR_UPDATE_TEST) return JSON.parse(fs.readFileSync(process.env.ORGANIZADOR_UPDATE_TEST, 'utf8'));
-  if (!UPDATE_REPO) return null;
+  if (!UPDATE_REPO || process.env.ORGANIZADOR_NO_UPDATE) return null;
   const { net } = require('electron');
   const res = await net.fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, {
     headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'organizador-projetos-app' },
@@ -250,7 +299,14 @@ function createWindow() {
     },
   });
   win.loadFile(path.join(__dirname, 'src', 'index.html'));
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    win.show();
+    if (startupNotice) {
+      const n = startupNotice;
+      startupNotice = null;
+      dialog.showMessageBox(win, { type: n.type, message: n.message, detail: n.detail });
+    }
+  });
   win.on('focus', checkExternalChange);
   win.on('close', (e) => {
     if (!isQuitting) {
@@ -355,6 +411,7 @@ function createTray() {
 
 // ---------- Ações de dados (exportar / importar / pasta) ----------
 async function exportData() {
+  await requestRendererFlush();
   const d = new Date();
   const { canceled, filePath } = await dialog.showSaveDialog(win, {
     title: 'Exportar backup',
@@ -371,6 +428,7 @@ async function importData() {
     title: 'Importar backup', properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }],
   });
   if (canceled || !filePaths[0]) return false;
+  await requestRendererFlush();
   let incoming;
   try { incoming = normalize(JSON.parse(fs.readFileSync(filePaths[0], 'utf8'))); } catch {
     dialog.showErrorBox('Arquivo inválido', 'Não consegui ler esse arquivo de backup.');
@@ -399,6 +457,7 @@ async function chooseDataDir() {
   if (canceled || !filePaths[0]) return false;
   const dir = filePaths[0];
   const target = path.join(dir, DATA_FILENAME);
+  await requestRendererFlush();
   writeNow();
   if (fs.existsSync(target) && path.resolve(target) !== path.resolve(dataFile())) {
     const { response } = await dialog.showMessageBox(win, {
@@ -496,6 +555,11 @@ function registerIpc() {
     if (/^file:/i.test(p)) { try { p = decodeURIComponent(new URL(p).pathname); } catch { return false; } }
     if (p.startsWith('~/')) p = path.join(require('os').homedir(), p.slice(2));
     if (!path.isAbsolute(p) || !fs.existsSync(p)) return false;
+    // Programas e scripts não são abertos direto (evita executar algo sem querer): só aparecem no Finder.
+    const st = fs.statSync(p);
+    const risky = /\.(app|command|tool|sh|zsh|bash|csh|fish|py|rb|pl|php|js|scpt|applescript|workflow|action|terminal|pkg|mpkg|jar|prefpane|kext|plugin)$/i.test(p.replace(/\/+$/, ''))
+      || (st.isFile() && (st.mode & 0o111));
+    if (risky) { shell.showItemInFolder(p); return true; }
     return (await shell.openPath(p)) === '';
   });
   ipcMain.handle('file:saveText', async (_e, { content, defaultName, ext }) => {
@@ -544,14 +608,17 @@ if (!app.requestSingleInstanceLock()) {
     loadConfig();
     nativeTheme.themeSource = ['light', 'dark'].includes(config.theme) ? config.theme : 'system';
     loadState();
-    // Um timer que ficou "rodando" (app encerrado à força) é fechado no reinício.
-    if (state.timer.running) state.timer.running = false;
+    // Um timer que ficou "rodando" (app encerrado à força) é fechado no reinício, salvando o que der.
+    recoverTimer();
     dailyBackup();
     registerIpc();
     buildAppMenu();
     createTray();
     createWindow();
     setInterval(checkExternalChange, 60 * 1000);
+    setInterval(() => {
+      if (state.timer.running) { state.timer.lastSeen = new Date().toISOString(); scheduleSave(); }
+    }, 60 * 1000);
     // Procura versão nova 15 s depois de abrir e depois a cada 6 horas.
     setTimeout(() => checkForUpdates(), 15 * 1000);
     setInterval(() => checkForUpdates(), 6 * 60 * 60 * 1000);
@@ -569,10 +636,17 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on('activate', showWindow);
-  app.on('before-quit', () => {
+  let quitReady = false;
+  app.on('before-quit', (e) => {
     isQuitting = true;
-    if (state && state.timer.running) timerPause();
-    if (state) writeNow();
+    if (quitReady || !state) return;
+    e.preventDefault();
+    requestRendererFlush().then(() => {
+      quitReady = true;
+      if (state.timer.running) timerPause();
+      writeNow();
+      app.quit();
+    });
   });
   app.on('window-all-closed', () => { /* continua na barra de menus */ });
 }

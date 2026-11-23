@@ -25,9 +25,33 @@ async function flush() { clearTimeout(saveT); saveT = null; await api.setState(S
 function scheduleTasks() {
   TaskTree.normalize(S.tasks);
   if (prefs.autoSchedule !== false) TaskTree.schedule(S.tasks); else TaskTree.rollup(S.tasks);
+  refreshGroups();
 }
 function commit() { scheduleTasks(); save(); render(); }
-const isGroup = (t) => S.tasks.some((x) => x.parentId === t.id);
+
+// Ids das tarefas que têm subtarefas (recalculado a cada alteração, em vez de procurar a cada consulta).
+let GROUP_IDS = new Set();
+const refreshGroups = () => { GROUP_IDS = new Set(S.tasks.map((t) => t.parentId).filter(Boolean)); };
+const isGroup = (t) => GROUP_IDS.has(t.id);
+
+// Cores e logo vindos de um arquivo editado por fora (ou backup importado) são validados antes de ir para a tela.
+const safeColor = (c, fallback = '#6e6e80') => (/^#[0-9a-f]{3,8}$/i.test(String(c || '')) ? c : fallback);
+function sanitizeState() {
+  for (const p of S.projects) p.color = safeColor(p.color, U.CORES[0]);
+  for (const meta of Object.values(S.tagMeta || {})) if (meta && meta.color) meta.color = safeColor(meta.color);
+  if (S.profile) {
+    if (S.profile.color) S.profile.color = safeColor(S.profile.color, '#5b6cff');
+    if (S.profile.logo && !/^data:image\/(png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(S.profile.logo)) S.profile.logo = '';
+  }
+}
+// Ao carregar (abrir o app, importar backup, sincronizar do outro Mac): valida e conserta antes de desenhar.
+function prepareState() {
+  sanitizeState();
+  TaskTree.normalize(S.tasks);
+  TaskTree.repairDeps(S.tasks);
+  TaskTree.rollup(S.tasks);
+  refreshGroups();
+}
 
 // ---------- Consultas ----------
 const proj = (id) => S.projects.find((p) => p.id === id);
@@ -351,7 +375,10 @@ function taskLine(t, { showProject = true } = {}) {
 // Filtros do painel (ficam salvos neste Mac).
 function dashFilters() {
   prefs.dash ||= { tags: [], project: '', prio: '', range: 14 };
-  return prefs.dash;
+  const f = prefs.dash;
+  // Projeto filtrado que foi arquivado, concluído ou excluído: o filtro é desfeito (senão o painel fica vazio).
+  if (f.project && S && !activeProjects().some((p) => p.id === f.project)) f.project = '';
+  return f;
 }
 function passesDash(t) {
   const f = dashFilters();
@@ -380,6 +407,7 @@ function renderDashboard(c) {
   const byPrio = (a, b) => prioW(a) - prioW(b) || taskEnd(a).localeCompare(taskEnd(b));
   const focus = live.filter((t) => isFocus(t)).sort((a, b) => (a.done - b.done) || byPrio(a, b));
   const shown = open.filter(passesDash);
+  const lateAll = open.filter((t) => taskEnd(t) < today).length; // contador geral, sem filtros
   const late = shown.filter((t) => taskEnd(t) < today).sort((a, b) => taskEnd(a).localeCompare(taskEnd(b)) || prioW(a) - prioW(b));
   const now = shown.filter((t) => t.start <= today && taskEnd(t) >= today && t.type !== 'entrega').sort(byPrio);
   const upcoming = shown.filter((t) => taskEnd(t) >= today && taskEnd(t) <= rangeEnd && !now.includes(t))
@@ -401,7 +429,7 @@ function renderDashboard(c) {
     <div class="stats">
       <div class="stat"><span class="stat-v">${U.dur(hToday)}</span><span class="stat-l">trabalhadas hoje</span></div>
       <div class="stat"><span class="stat-v">${U.dur(hWeek)}</span><span class="stat-l">nesta semana</span></div>
-      <div class="stat${late.length ? ' warn' : ''}"><span class="stat-v">${late.length}</span><span class="stat-l">tarefas atrasadas</span></div>
+      <div class="stat${lateAll ? ' warn' : ''}"><span class="stat-v">${lateAll}</span><span class="stat-l">tarefas atrasadas</span></div>
       <div class="stat"><span class="stat-v">${deliveries}</span><span class="stat-l">entregas em 14 dias</span></div>
     </div>
     <div class="card focus-card">
@@ -444,7 +472,7 @@ function renderDashboard(c) {
         <h3>Projetos</h3>
         ${activeProjects().map((p) => {
           const prog = projectProgress(p.id);
-          const next = S.tasks.filter((t) => t.projectId === p.id && !t.done && taskEnd(t) >= today).sort((a, b) => taskEnd(a).localeCompare(taskEnd(b)))[0];
+          const next = S.tasks.filter((t) => t.projectId === p.id && !t.done && !isGroup(t) && taskEnd(t) >= today).sort((a, b) => taskEnd(a).localeCompare(taskEnd(b)))[0];
           return `<button class="proj-row" data-action="open-project" data-id="${p.id}">
             <span class="dot" style="background:${p.color}"></span>
             <span class="pr-name"><span>${U.esc(p.name)}${p.status === 'pausado' ? ' <span class="pi-badge">pausado</span>' : ''}</span><small>${next ? `próximo: ${U.esc(next.title)} · ${U.fmtDate(taskEnd(next))}` : 'sem prazos pendentes'}</small></span>
@@ -1047,7 +1075,7 @@ function brandBlock(pr) {
     pr.email && `<a href="mailto:${U.esc(pr.email)}">${U.esc(pr.email)}</a>`,
     pr.whatsapp && `<a href="https://wa.me/${waDigits(pr.whatsapp)}">WhatsApp ${U.esc(pr.whatsapp)}</a>`,
   ].filter(Boolean).map((x) => `<div>${x}</div>`).join('');
-  const logo = pr.pdf.logo && pr.logo ? `<img class="rep-logo" src="${pr.logo}" alt="">` : '';
+  const logo = pr.pdf.logo && pr.logo ? `<img class="rep-logo" src="${U.esc(pr.logo)}" alt="">` : '';
   const text = pr.name || pr.subtitle ? `<div class="rep-brand-text">${pr.name ? `<b>${U.esc(pr.name)}</b>` : ''}${pr.subtitle ? `<span>${U.esc(pr.subtitle)}</span>` : ''}</div>` : '';
   const right = pr.pdf.contact && (contact || pr.address)
     ? `<div class="rep-brand-contact">${contact}${pr.address ? `<div>${U.esc(pr.address).replace(/\n+/g, ' · ')}</div>` : ''}</div>` : '';
@@ -1108,7 +1136,7 @@ function renderProfile(c) {
 
         <h3 class="mt">Logo</h3>
         <div class="logo-drop" id="logoDrop">
-          ${pr.logo ? `<img src="${pr.logo}" alt="Logo">` : '<span class="muted">Arraste a imagem do logo aqui<br><small>PNG com fundo transparente fica melhor · também aceita JPG e SVG</small></span>'}
+          ${pr.logo ? `<img src="${U.esc(pr.logo)}" alt="Logo">` : '<span class="muted">Arraste a imagem do logo aqui<br><small>PNG com fundo transparente fica melhor · também aceita JPG e SVG</small></span>'}
         </div>
         <div class="logo-actions">
           <label class="btn"><input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" data-bind="prof-logo" hidden>${pr.logo ? 'Trocar logo' : 'Escolher imagem…'}</label>
@@ -1209,7 +1237,8 @@ function renderTimeline(c) {
 function renderCalendar(c) {
   const monthKey = prefs.calMonth || U.todayKey().slice(0, 8) + '01';
   const m = U.fromKey(monthKey);
-  const filter = prefs.calProject && proj(prefs.calProject) ? prefs.calProject : '';
+  if (prefs.calProject && (!proj(prefs.calProject) || proj(prefs.calProject).archived)) prefs.calProject = null;
+  const filter = prefs.calProject || '';
   const today = U.todayKey();
   const items = S.tasks
     .filter((t) => (!filter || t.projectId === filter) && (prefs.calShowDone || !t.done) && proj(t.projectId) && !proj(t.projectId).archived && !isGroup(t) && (!prefs.calTag || (t.tags || []).includes(prefs.calTag)))
@@ -1436,7 +1465,7 @@ function renderHours(c, projectId) {
     <div class="entries">
       ${Object.keys(byDay).sort().reverse().map((k) => {
         const es = byDay[k];
-        const dayTotal = es.reduce((a, e) => a + entryMs(e), 0);
+        const dayTotal = es.reduce((a, e) => a + msInRange(e, from, to), 0);
         return `<div class="day-group">
           <div class="dg-head"><span>${U.fmtDateLong(k)}</span><span>${U.dur(dayTotal)}</span></div>
           ${es.map((e) => {
@@ -1469,10 +1498,15 @@ function modal({ title, body, buttons, wide, onOpen }) {
   const el = $('.modal', root);
   const close = () => { root.innerHTML = ''; document.removeEventListener('keydown', onKey, true); closeCurrentModal = null; };
   closeCurrentModal = close;
-  const run = async (b) => { const r = await b.action?.(el); if (r !== false) close(); };
+  let busy = false;
+  const run = async (b) => {
+    if (busy) return; // evita rodar duas vezes (ex.: duas janelas de salvar PDF)
+    busy = true;
+    try { const r = await b.action?.(el); if (r !== false) close(); } finally { busy = false; }
+  };
   const onKey = (e) => {
     if (e.key === 'Escape') { e.stopPropagation(); close(); }
-    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && !e.isComposing && !((e.target.classList.contains('tag-entry') || e.target.classList.contains('le-url')) && e.target.value.trim())) {
+    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'BUTTON' && !e.isComposing && !((e.target.classList.contains('tag-entry') || e.target.classList.contains('le-url')) && e.target.value.trim())) {
       const primary = buttons.find((b) => (b.cls || '').includes('primary'));
       if (primary) { e.preventDefault(); run(primary); }
     }
@@ -1497,7 +1531,7 @@ function projectModal(p) {
       <label class="field"><span>Cliente</span><input name="client" value="${U.esc(p.client || '')}" placeholder="Opcional"></label>
       <div class="field"><span>Cor</span><div class="swatches">${U.CORES.map((c) => `<label class="sw" style="--c:${c}"><input type="radio" name="color" value="${c}" ${c === p.color ? 'checked' : ''}><span></span></label>`).join('')}</div></div>
       <label class="field"><span>Status</span><select name="status">
-        ${[['ativo', 'Ativo'], ['pausado', 'Pausado'], ['concluido', 'Concluído (arquivado)']].map(([v, l]) => `<option value="${v}" ${p.status === v ? 'selected' : ''}>${l}</option>`).join('')}
+        ${[['ativo', 'Ativo'], ['pausado', 'Pausado'], ['concluido', 'Concluído']].map(([v, l]) => `<option value="${v}" ${p.status === v ? 'selected' : ''}>${l}</option>`).join('')}
       </select></label>`,
     buttons: [
       ...(!isNew ? [{ label: p.archived ? 'Excluir definitivamente' : 'Arquivar projeto', cls: (p.archived ? 'danger' : '') + ' left', action: async () => {
@@ -1609,7 +1643,7 @@ function taskModal(t, defaults = {}) {
         const focusOn = $('[name=focus]', el2).checked;
         const data = { projectId, parentId: val(el2, 'parentId') || null, deps, type, title, notes: val(el2, 'notes'), priority: val(el2, 'priority') || null, tags: tags.slice(), links: links.slice(), focusDate: focusOn ? today : (t.focusDate === today ? null : t.focusDate || null) };
         if (!group) Object.assign(data, { start, end, progress: +val(el2, 'progress') || 0, done });
-        if (done && !group) data.progress = 100;
+        if (done && !group) { if (!t.done) data.prevProgress = +val(el2, 'progress') || 0; data.progress = 100; }
         if (isNew) S.tasks.push({ id: U.uid(), createdAt: new Date().toISOString(), ...data });
         else {
           if (projectId !== t.projectId) {
@@ -1851,7 +1885,7 @@ const ACTIONS = {
     const targets = isGroup(t) ? TaskTree.descendants(S.tasks, t.id).filter((x) => !isGroup(x)) : [t];
     for (const x of targets) {
       x.done = el.checked;
-      if (x.done) { x.prevProgress = x.progress; x.progress = 100; } else if (x.prevProgress != null) x.progress = x.prevProgress;
+      if (x.done) { x.prevProgress = x.progress; x.progress = 100; } else x.progress = x.prevProgress ?? 0;
     }
     commit();
   },
@@ -1963,7 +1997,7 @@ const ACTIONS = {
   },
 
   'data-reveal': () => api.revealData(),
-  'data-export': () => api.exportData(),
+  'data-export': async () => { await flush(); api.exportData(); },
   'data-import': async () => { await flush(); if (await api.importData()) closeModal(); },
   'data-dir': async () => { await flush(); if (await api.chooseDataDir()) settingsModal(); },
 };
@@ -1987,7 +2021,7 @@ document.addEventListener('click', (e) => {
 });
 
 // ---------- Campos (digitação) ----------
-const timerDescUpdate = U.debounce((v) => api.timerUpdate({ description: v }).then((s) => { S = s; }), 400);
+const timerDescUpdate = U.debounce((v) => api.timerUpdate({ description: v }).then((s) => { S.timer = s.timer; }), 400);
 const refreshNoteList = U.debounce(() => {
   const n = S.notes.find((x) => x.id === prefs.notes[view.projectId]);
   const item = n && $(`.nl-item[data-id="${n.id}"]`);
@@ -2047,7 +2081,7 @@ document.addEventListener('change', (e) => {
   if (el && !INPUT_BINDS.has(el.dataset.bind)) BINDS[el.dataset.bind]?.(el, e);
 });
 
-// Atalhos: ⌘N nova tarefa, ⌘⇧N novo projeto, ⌘R / ⌘. alterna o timer.
+// Atalhos: ⌘N nova tarefa, ⌘⇧N novo projeto, ⌘. liga/pausa o timer.
 document.addEventListener('keydown', (e) => {
   if ($('#modalRoot').children.length) return;
   if (e.metaKey && e.key.toLowerCase() === 'n') {
@@ -2073,10 +2107,13 @@ api.onState((s) => {
     S.timeEntries = s.timeEntries;
     flush();
   } else S = s;
-  TaskTree.normalize(S.tasks); TaskTree.rollup(S.tasks);
+  prepareState();
   const typing = document.activeElement && document.activeElement.matches('.ne-body, .ne-title, [data-bind=brief], [data-bind=timer-desc]');
   if (typing) { renderTimer(); renderSidebar(); } else render();
 });
+
+// O app pediu para salvar agora (vai fechar, exportar ou trocar de pasta).
+api.onFlush(async () => { if (saveT) await flush(); api.flushed(); });
 
 setInterval(() => {
   updateClock();
@@ -2095,7 +2132,7 @@ function markTheme(theme) {
 (async () => {
   api.getTheme().then(markTheme);
   S = await api.getState();
-  TaskTree.normalize(S.tasks); TaskTree.rollup(S.tasks);
+  prepareState();
   render(true);
 })();
 

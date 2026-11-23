@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld('api', {
   getState: () => ipcRenderer.invoke('state:get'),
   setState: (s) => ipcRenderer.invoke('state:set', s),
   onState: (cb) => ipcRenderer.on('state:changed', (_e, s) => cb(s)),
+  onFlush: (cb) => ipcRenderer.on('app:flush', () => cb()),
+  flushed: () => ipcRenderer.send('app:flushed'),
   timerStart: (opts) => ipcRenderer.invoke('timer:start', opts),
   timerPause: () => ipcRenderer.invoke('timer:pause'),
   timerUpdate: (patch) => ipcRenderer.invoke('timer:update', patch),

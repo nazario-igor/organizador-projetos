@@ -7,6 +7,7 @@
 //   node scripts/demo-data.js --perfil   → preenche só o perfil com uma empresa fictícia
 //   node scripts/demo-data.js --remover-perfil → limpa só o perfil fictício
 //   node scripts/demo-data.js --arquivo /caminho/organizador-dados.json
+//   --forcar  → roda mesmo se parecer que o app está aberto
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -14,9 +15,21 @@ const os = require('os');
 const args = process.argv.slice(2);
 const remove = args.includes('--remover');
 const fileArg = args.indexOf('--arquivo');
+const appDir = path.join(os.homedir(), 'Library', 'Application Support', 'Organizador de Projetos');
+
+// Com o app aberto, ele sobrescreveria estas mudanças ao salvar. O Electron cria a trava "SingletonLock" enquanto roda.
+if (!args.includes('--forcar')) {
+  let locked = false;
+  try { fs.lstatSync(path.join(appDir, 'SingletonLock')); locked = true; } catch { /* app fechado */ }
+  if (locked) {
+    console.error('Feche o Organizador antes (menu do ícone na barra → Sair).\nSe ele já estiver fechado, rode de novo com --forcar.');
+    process.exit(1);
+  }
+}
+
 let file = fileArg >= 0 ? args[fileArg + 1] : null;
+if (fileArg >= 0 && !file) { console.error('Informe o caminho depois de --arquivo.'); process.exit(1); }
 if (!file) {
-  const appDir = path.join(os.homedir(), 'Library', 'Application Support', 'Organizador de Projetos');
   let dir = appDir;
   try { dir = JSON.parse(fs.readFileSync(path.join(appDir, 'config.json'), 'utf8')).dataDir || appDir; } catch { /* padrão */ }
   file = path.join(dir, 'organizador-dados.json');

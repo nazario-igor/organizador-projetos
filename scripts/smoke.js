@@ -1,5 +1,5 @@
-// Teste visual: abre o app com dados de exemplo, navega pelas telas e salva prints.
-// Uso: SMOKE_OUT=/pasta electron scripts/smoke.js
+// Teste visual: abre o app com dados de exemplo, navega pelas telas, salva prints e confere resultados.
+// Uso: SMOKE_OUT=/pasta npx electron scripts/smoke.js   (no fim, "ERRORS []" = tudo certo)
 const { app, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
@@ -9,6 +9,7 @@ const out = process.env.SMOKE_OUT || path.join(os.tmpdir(), 'organizador-smoke')
 fs.mkdirSync(out, { recursive: true });
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'organizador-test-'));
 process.env.ORGANIZADOR_USER_DATA = userData;
+process.env.ORGANIZADOR_NO_UPDATE = '1'; // não consulta o GitHub durante o teste
 
 // Dados de exemplo
 const pad = (n) => String(n).padStart(2, '0');
@@ -49,6 +50,7 @@ const seed = {
 fs.writeFileSync(path.join(userData, 'organizador-dados.json'), JSON.stringify(seed));
 
 const errors = [];
+const expect = (name, ok, got) => { if (!ok) errors.push(`falhou: ${name} → ${got}`); };
 app.on('browser-window-created', (_e, win) => {
   win.webContents.on('console-message', (ev) => {
     const level = ev.level ?? ev.params?.level;
@@ -75,6 +77,7 @@ app.on('browser-window-created', (_e, win) => {
       await js(`(() => { const t=S.tasks.find(x=>x.id==='t2'); TaskTree.move(S.tasks,t,U.addDays(t.start,3),U.addDays(t.end,3)); commit(); })()`);
       const after = await js('JSON.stringify(["t3","t4","t5"].map(id=>S.tasks.find(t=>t.id===id).start))');
       console.log('PUSH', before, '->', after);
+      expect('dependentes empurrados', JSON.parse(after).every((d, i) => d > JSON.parse(before)[i]), after);
       await shot('02c-gantt-empurrado');
       await click('[data-action=gantt-zoom][data-zoom=semana]'); await shot('03-gantt-semanas');
       await click('[data-action=gantt-zoom][data-zoom=dia]');
@@ -84,6 +87,7 @@ app.on('browser-window-created', (_e, win) => {
       await click('[data-action=nav][data-view=calendar]'); await shot('08-calendario');
       const cyc = await js('JSON.stringify([TaskTree.linkProblem(S.tasks,"g2","t3"), TaskTree.linkProblem(S.tasks,"t1","t9")])');
       console.log('CYCLE', cyc);
+      expect('ciclo bloqueado e ligação válida aceita', JSON.parse(cyc)[0] && JSON.parse(cyc)[1] === null, cyc);
       await click('[data-action=nav][data-view=dashboard]'); await shot('12-painel-final');
       await click('[data-action=theme][data-theme=light]'); await sleep(300); await shot('13-tema-claro');
       await click('[data-action=nav][data-view=calendar]'); await shot('14-calendario-claro');
@@ -98,6 +102,7 @@ app.on('browser-window-created', (_e, win) => {
       await js(`window.confirm = () => true; 1`); await click('[data-action=adm-dup][data-id=p1]'); await shot('18c-admin-duplicado');
       const dup = await js('JSON.stringify((() => { const c = S.projects.find(p => p.name.endsWith("(cópia)")); const ts = S.tasks.filter(t => t.projectId === c.id); return { tasks: ts.length, groups: ts.filter(t => ts.some(x => x.parentId === t.id)).length, deps: ts.reduce((n, t) => n + (t.deps||[]).length, 0), done: ts.filter(t => t.done).length }; })())');
       console.log('DUP', dup);
+      expect('duplicar como modelo', dup === JSON.stringify({ tasks: 8, groups: 2, deps: 5, done: 0 }), dup);
       await click('[data-action=nav][data-view=tags]'); await shot('19-admin-tags');
       await click('[data-action=tag-toggle][data-tag=design]'); await shot('19b-admin-tags-tarefas');
       await js(`(() => { renameTag('dev', 'desenvolvimento'); tagMeta()['desenvolvimento'] = { color: '#e5484d' }; commit(); return 1; })()`);
@@ -105,14 +110,19 @@ app.on('browser-window-created', (_e, win) => {
       await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))`);
       const tagState = await js('JSON.stringify({ tags: allTags(), devLeft: S.tasks.filter(t => (t.tags||[]).includes("dev")).length, renamed: S.tasks.filter(t => (t.tags||[]).includes("desenvolvimento")).length, color: tagColor("desenvolvimento") })');
       console.log('TAGS', tagState);
+      { const t = JSON.parse(tagState); expect('renomear e colorir tag', t.devLeft === 0 && t.renamed > 0 && t.color === '#e5484d', tagState); }
       await click('#projectsLink'); await click('[data-action=adm-status][data-v=""]');
+      await js(`(() => { dashFilters().project = 'p3'; savePrefs(); return 1; })()`);
       await click('[data-action=adm-archive][data-id=p3]'); await shot('20-projetos-apos-arquivar');
+      expect('filtro do painel desfeito ao arquivar o projeto', (await js('dashFilters().project')) === '', 'ainda filtrando p3');
       const arch = await js('JSON.stringify({ sidebar: !!document.querySelector("#projectList [data-id=p3]"), timer: !!document.querySelector("#timerBox option[value=p3]"), archived: !!S.projects.find(p => p.id === "p3").archived })');
       console.log('ARCH', arch);
+      expect('arquivar tira da barra e do timer', arch === JSON.stringify({ sidebar: false, timer: false, archived: true }), arch);
       await click('[data-action=adm-status][data-v=arquivado]'); await shot('21-arquivados');
       await click('[data-action=adm-unarchive][data-id=p3]');
       const back = await js('JSON.stringify({ archived: !!S.projects.find(p => p.id === "p3").archived, sidebar: !!document.querySelector("#projectList [data-id=p3]") })');
       console.log('UNARCH', back);
+      expect('desarquivar devolve', back === JSON.stringify({ archived: false, sidebar: true }), back);
       await js(`(() => { const p = S.projects.find(x => x.id === 'p1'); p.links = [{ id: 'l1', url: 'https://drive.google.com/drive/folders/abc123', label: '' }, { id: 'l2', url: 'https://www.figma.com/design/xyz/Site-Aurora', label: 'Layout no Figma' }, { id: 'l3', url: '/Users/exemplo/Google Drive/Clientes/Padaria Aurora', label: '' }];
         const t = S.tasks.find(x => x.id === 't3'); t.links = [{ id: 'l4', url: 'https://docs.google.com/document/d/xyz/edit', label: '' }]; commit(); return 1; })()`);
       await click('[data-action=open-project][data-id=p1]'); await click('[data-action=tab][data-tab=gantt]'); await shot('22-links-projeto');
@@ -153,10 +163,22 @@ app.on('browser-window-created', (_e, win) => {
       await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))`); await shot('30-banner-atualizacao');
       const st = await js('JSON.stringify({entries:S.timeEntries.length, running:S.timer.running})');
       console.log('STATE', st);
+      // Correções da revisão
+      const extra = await js(`JSON.stringify((() => {
+        const t1 = S.tasks.find((t) => t.id === 't1'); t1.deps = ['t9']; // ciclo: t9 já depende (indiretamente) de t1
+        const removed = TaskTree.repairDeps(S.tasks);
+        const t = S.tasks.find((x) => x.id === 't6'); t.done = true; t.progress = 100; t.prevProgress = undefined;
+        ACTIONS['toggle-done']({ dataset: { id: 't6' }, checked: false });
+        return { removed, t1deps: t1.deps.length, dur: U.dur(20000), undone: S.tasks.find((x) => x.id === 't6').progress,
+          color: (() => { const p = proj('p2'); p.color = 'red;background:url(x)'; sanitizeState(); return p.color; })() };
+      })())`);
+      console.log('FIXES', extra);
+      expect('correções (ciclo, <1min, desmarcar, cor)', extra === JSON.stringify({ removed: 1, t1deps: 0, dur: '<1min', undone: 0, color: '#5b6cff' }), extra);
     } catch (e) { errors.push('teste: ' + e.message); }
     console.log('ERRORS', JSON.stringify(errors));
     console.log('OUT', out);
-    app.exit(0);
+    fs.rmSync(userData, { recursive: true, force: true }); // pasta temporária do teste
+    app.exit(errors.length ? 1 : 0);
   });
 });
 

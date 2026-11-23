@@ -25,6 +25,7 @@ const U = (() => {
   };
   const dur = (ms) => {
     const m = Math.round(ms / 60000);
+    if (m === 0 && ms > 0) return '<1min';
     if (m < 60) return `${m}min`;
     return `${Math.floor(m / 60)}h${m % 60 ? pad(m % 60) : ''}`;
   };

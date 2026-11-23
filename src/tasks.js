@@ -146,6 +146,19 @@ const TaskTree = (() => {
     return null;
   }
 
+  // Remove dependências que a interface não deixaria criar (ciclos, mãe/subtarefa, outro projeto).
+  // Usada ao carregar dados — por exemplo, um backup importado —, não a cada edição.
+  function repairDeps(tasks) {
+    let removed = 0;
+    for (const t of tasks) {
+      for (const d of [...(t.deps || [])]) {
+        t.deps = t.deps.filter((x) => x !== d);
+        if (linkProblem(tasks, d, t.id)) removed++; else t.deps.push(d);
+      }
+    }
+    return removed;
+  }
+
   // Lista em ordem de exibição (mãe seguida das subtarefas), com profundidade.
   function ordered(tasks, collapsed = {}) {
     const kids = childrenMap(tasks);
@@ -163,5 +176,5 @@ const TaskTree = (() => {
     return out;
   }
 
-  return { endOf, childrenMap, hasChildren, descendants, ancestors, normalize, rollup, schedule, move, shift, earliestStart, linkProblem, ordered };
+  return { endOf, childrenMap, hasChildren, descendants, ancestors, normalize, repairDeps, rollup, schedule, move, shift, earliestStart, linkProblem, ordered };
 })();
