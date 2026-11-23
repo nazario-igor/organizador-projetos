@@ -77,6 +77,8 @@ if (!args.includes('--sem-build')) {
   console.log(`\n▶ Gerando o instalador da versão ${version} (Intel + Apple Silicon)…\n`);
   const r = spawnSync('npx', ['electron-builder', '--mac', '--universal', '--publish', 'never'], { cwd: root, stdio: 'inherit' });
   if (r.status !== 0) fail('A geração do instalador falhou (veja as mensagens acima).');
+  // A cópia solta do app usada para montar o .dmg aparecia no Spotlight ao lado do app instalado.
+  fs.rmSync(path.join(root, 'dist', 'mac-universal'), { recursive: true, force: true });
 }
 if (!fs.existsSync(dmg)) fail(`Não encontrei ${path.relative(root, dmg)}.`);
 console.log(`\n✔ Instalador: ${path.relative(root, dmg)} (${(fs.statSync(dmg).size / 1048576).toFixed(0)} MB)`);

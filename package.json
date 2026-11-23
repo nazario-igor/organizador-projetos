@@ -17,6 +17,8 @@
     "icons": "electron scripts/make-icons.js",
     "dist": "electron-builder --mac --universal",
     "dist:arm": "electron-builder --mac --arm64",
+    "postdist": "node -e \"require('fs').rmSync('dist/mac-universal',{recursive:true,force:true})\"",
+    "postdist:arm": "node -e \"require('fs').rmSync('dist/mac-arm64',{recursive:true,force:true})\"",
     "release": "node scripts/release.js"
   },
   "build": {
