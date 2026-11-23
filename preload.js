@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('api', {
   checkUpdate: () => ipcRenderer.invoke('update:check'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
+  releaseNotes: () => ipcRenderer.invoke('update:notes'),
   updateOnline: () => ipcRenderer.invoke('update:online'),
   onUpdateProgress: (cb) => ipcRenderer.on('update:progress', (_e, p) => cb(p)),
   onUpdate: (cb) => ipcRenderer.on('update:available', (_e, info) => cb(info)),

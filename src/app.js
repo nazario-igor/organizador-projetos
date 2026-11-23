@@ -1781,7 +1781,8 @@ async function settingsModal() {
       <p class="muted small">O app também guarda uma cópia diária automática de cada base na subpasta <b>backups</b>.</p>
       <h3>Versão</h3>
       <div class="settings-actions"><span>Organizador de Projetos <b>${U.esc(await api.appVersion())}</b></span>
-        <button class="btn" data-action="update-check">Verificar atualizações</button></div>`,
+        <button class="btn" data-action="update-check">Verificar atualizações</button>
+        <button class="btn" data-action="update-notes">Ver novidades</button></div>`,
     buttons: [{ label: 'Fechar', cls: 'primary' }],
   });
 }
@@ -1976,6 +1977,7 @@ const ACTIONS = {
   'base-delete': async (el) => { if (await api.deleteBase(el.dataset.id)) basesModal(); },
   'update-open': () => updateModal(),
   'update-check': () => { closeModal(); api.checkUpdate(); },
+  'update-notes': () => api.releaseNotes(),
   theme: async (el) => { markTheme(await api.setTheme(el.dataset.theme)); },
 
   'timer-start': () => {

@@ -2,6 +2,12 @@
 
 Cada versão tem uma seção `## x.y.z`. O texto dela aparece no aviso de atualização do app.
 
+## 1.2.1
+
+Primeira versão entregue pela **atualização dentro do app**.
+
+- **Dados e backup → Ver novidades** abre a página com o que mudou na versão instalada
+
 ## 1.2.0
 
 **Atualização dentro do app** e **várias bases de dados**.

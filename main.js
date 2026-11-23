@@ -800,6 +800,9 @@ function registerIpc() {
   ipcMain.handle('update:check', () => checkForUpdates({ manual: true }));
   ipcMain.handle('update:download', () => { if (updateInfo) shell.openExternal(updateInfo.url); return !!updateInfo; });
   ipcMain.handle('update:install', installUpdate);
+  ipcMain.handle('update:notes', () => {
+    if (UPDATE_REPO) shell.openExternal(`https://github.com/${UPDATE_REPO}/releases/tag/v${APP_VERSION}`);
+  });
   ipcMain.handle('update:online', () => { if (!updateInfo) checkForUpdates(); });
   ipcMain.handle('theme:get', () => config.theme || 'system');
   ipcMain.handle('theme:set', (_e, theme) => {
@@ -881,7 +884,7 @@ if (!app.requestSingleInstanceLock()) {
     loadConfig();
     if (config.updatedFrom) {
       if (config.updatedFrom !== APP_VERSION) {
-        startupNotice = { type: 'info', message: `Organizador atualizado para a versão ${APP_VERSION}.`, detail: 'Tudo certo: seus dados continuam como estavam. As novidades estão em Dados e backup → Versão.' };
+        startupNotice = { type: 'info', message: `Organizador atualizado para a versão ${APP_VERSION}.`, detail: 'Tudo certo: seus dados continuam como estavam. Para ver o que mudou, use Dados e backup → Ver novidades.' };
       }
       delete config.updatedFrom;
       saveConfig();
