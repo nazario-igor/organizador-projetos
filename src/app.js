@@ -1764,6 +1764,7 @@ function updateModal() {
           <li>Clique em <b>Baixar</b>: o instalador (.dmg) vai para a pasta Downloads.</li>
           <li>Feche o Organizador (menu do ícone na barra → Sair).</li>
           <li>Abra o .dmg e arraste o app para <b>Aplicativos</b>, escolhendo <b>Substituir</b>.</li>
+          <li>Abra o app. Se o Mac disser que não pôde verificá-lo, clique em OK e vá em <b>Ajustes do Sistema → Privacidade e Segurança → Abrir Mesmo Assim</b>.</li>
         </ol>
         <p class="muted small">Seus projetos, horas e configurações ficam guardados fora do app e continuam lá depois da atualização.</p>
       </div>`,

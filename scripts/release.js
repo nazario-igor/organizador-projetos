@@ -8,6 +8,8 @@
 // Antes de publicar:
 //   1. Aumente a versão:   npm version patch --no-git-tag-version   (1.0.0 → 1.0.1)
 //   2. Escreva as novidades em NOVIDADES.md, numa seção "## 1.0.1"
+//   3. Salve e envie o código:   git add -A && git commit -m "Versão 1.0.1" && git push
+// O script recusa publicar se houver mudanças não salvas ou não enviadas, e marca a versão no commit enviado.
 const { execFileSync, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -36,6 +38,40 @@ if (!args.includes('--so-build')) {
   if (!notes) fail(`Escreva as novidades da versão ${version} em NOVIDADES.md (uma seção "## ${version}").`);
 }
 
+// O código precisa estar salvo e enviado ao GitHub: a versão publicada é marcada nesse commit.
+let targetSha = null;
+if (!args.includes('--so-build')) {
+  const git = (a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  try { git(['rev-parse', '--is-inside-work-tree']); } catch { fail('Esta pasta não é um repositório Git. Clone o projeto com git antes de publicar.'); }
+  const dirty = git(['status', '--porcelain']);
+  if (dirty) fail(`Há mudanças ainda não salvas no Git:\n${dirty}\n\nSalve e envie antes:  git add -A && git commit -m "Versão ${version}" && git push`);
+  try { git(['fetch', '--quiet']); } catch { fail('Não consegui consultar o GitHub (git fetch). Confira a internet e tente de novo.'); }
+  let upstream = '';
+  try { upstream = git(['rev-parse', '@{u}']); } catch { fail('Este branch não está ligado a um branch no GitHub. Rode:  git push -u origin main'); }
+  const head = git(['rev-parse', 'HEAD']);
+  if (head !== upstream) {
+    const ahead = git(['rev-list', '--count', '@{u}..HEAD']);
+    fail(ahead !== '0' ? `Há ${ahead} commit(s) ainda não enviados ao GitHub. Rode:  git push` : 'O GitHub tem mudanças que não estão aqui. Rode:  git pull');
+  }
+  targetSha = head;
+}
+
+// GitHub CLI (em ~/.local/bin ou no PATH): login, repositório e versão repetida são conferidos antes de gerar o .dmg.
+const ghLocal = path.join(os.homedir(), '.local', 'bin', 'gh');
+const gh = fs.existsSync(ghLocal) ? ghLocal : 'gh';
+const run = (a, opts = {}) => execFileSync(gh, a, { cwd: root, encoding: 'utf8', ...opts });
+if (!args.includes('--so-build')) {
+  try { run(['auth', 'status'], { stdio: 'pipe' }); } catch {
+    fail('O GitHub CLI (gh) não está instalado ou não está logado. Rode no Terminal:  gh auth login');
+  }
+  try { run(['repo', 'view', repo, '--json', 'name'], { stdio: 'pipe' }); } catch {
+    fail(`O repositório ${repo} não existe ou não está acessível com esta conta do GitHub.`);
+  }
+  let alreadyPublished = false;
+  try { run(['release', 'view', `v${version}`, '--repo', repo], { stdio: 'pipe' }); alreadyPublished = true; } catch { /* ainda não existe: ótimo */ }
+  if (alreadyPublished) fail(`A versão v${version} já foi publicada. Aumente a versão antes (npm version patch --no-git-tag-version).`);
+}
+
 const dmg = path.join(root, 'dist', `Organizador-de-Projetos-${version}.dmg`);
 if (!args.includes('--sem-build')) {
   console.log(`\n▶ Gerando o instalador da versão ${version} (Intel + Apple Silicon)…\n`);
@@ -46,22 +82,8 @@ if (!fs.existsSync(dmg)) fail(`Não encontrei ${path.relative(root, dmg)}.`);
 console.log(`\n✔ Instalador: ${path.relative(root, dmg)} (${(fs.statSync(dmg).size / 1048576).toFixed(0)} MB)`);
 if (args.includes('--so-build')) process.exit(0);
 
-// GitHub CLI (instalado em ~/.local/bin ou no PATH).
-const ghLocal = path.join(os.homedir(), '.local', 'bin', 'gh');
-const gh = fs.existsSync(ghLocal) ? ghLocal : 'gh';
-const run = (a, opts = {}) => execFileSync(gh, a, { cwd: root, encoding: 'utf8', ...opts });
-try { run(['auth', 'status'], { stdio: 'pipe' }); } catch {
-  fail('O GitHub CLI não está logado. Rode no Terminal:  ~/.local/bin/gh auth login');
-}
-try { run(['repo', 'view', repo, '--json', 'name'], { stdio: 'pipe' }); } catch {
-  fail(`O repositório ${repo} não existe (ou não está acessível). Crie-o como público, só para as versões.`);
-}
-let alreadyPublished = false;
-try { run(['release', 'view', `v${version}`, '--repo', repo], { stdio: 'pipe' }); alreadyPublished = true; } catch { /* ainda não existe: ótimo */ }
-if (alreadyPublished) fail(`A versão v${version} já foi publicada. Aumente a versão antes (npm version patch --no-git-tag-version).`);
-
 const notesFile = path.join(os.tmpdir(), `organizador-notas-${version}.md`);
 fs.writeFileSync(notesFile, notes);
 console.log(`\n▶ Publicando v${version} em ${repo}…`);
-run(['release', 'create', `v${version}`, dmg, '--repo', repo, '--title', `Versão ${version}`, '--notes-file', notesFile], { stdio: 'inherit' });
+run(['release', 'create', `v${version}`, dmg, '--repo', repo, '--target', targetSha, '--title', `Versão ${version}`, '--notes-file', notesFile], { stdio: 'inherit' });
 console.log(`\n✔ Pronto! Os apps instalados vão avisar sobre a versão ${version} em até 6 horas (ou em "Verificar atualizações…").\n`);

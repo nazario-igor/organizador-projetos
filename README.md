@@ -1,67 +1,53 @@
 # Organizador de Projetos
 
-App para Mac com janela própria e ícone na barra de menus:
+App para Mac, em português, para organizar projetos e contar horas trabalhadas. Tem janela própria e
+fica também como ícone na barra de menus (perto do relógio), com o contador de horas sempre à mão.
 
-- **Cronograma (Gantt)** — tarefas com início/fim e entregas (marcos). Arraste as barras para mudar as datas e puxe as bordas para mudar a duração. Zoom por dias, semanas ou meses.
-- **Calendário** — mês com todas as tarefas e entregas de todos os projetos (ou filtrado por projeto) e as horas registradas em cada dia.
-- **Anotações** — por projeto, com busca, fixar no topo e Markdown simples (`# título`, `- lista`, `- [ ] checklist`, `**negrito**`).
-- **Briefing** — formulário estruturado por projeto, exporta em PDF ou copia como texto.
-- **Horas** — botão **Rec / Pausar** na barra superior e no ícone da barra de menus. Cada trecho gravado vira um registro. Dá para lançar ou editar horas à mão e exportar em CSV.
+**[Baixar a última versão](https://github.com/nazario-igor/organizador-projetos/releases/latest)** · funciona em Macs Intel e Apple Silicon
 
-## Como abrir (por enquanto)
+## O que ele faz
 
-Dê dois cliques em **Abrir Organizador.command**, ou no Terminal:
+- **Painel** — o dia de hoje: horas trabalhadas, tarefas atrasadas, próximas entregas e a lista **☀ Foco de hoje**, com filtros por tag, projeto e prioridade.
+- **Cronograma (Gantt)** por projeto — tarefas, entregas (marcos), **subtarefas** em grupos recolhíveis e **dependências** com setas. Arraste as barras para mudar datas; quando uma tarefa atrasa, as que dependem dela são empurradas.
+- **Cronograma geral** — todos os projetos numa linha do tempo só.
+- **Calendário** — o mês com tarefas, entregas e as horas registradas em cada dia.
+- **Horas** — botão **Rec / Pausar** na barra superior e no ícone da barra de menus. Dá para lançar ou editar horas à mão e exportar em CSV.
+- **Anotações** e **briefing** por projeto (Markdown simples nas anotações; briefing em formulário).
+- **Links** em projetos e tarefas: pastas do Drive, Docs, Figma ou pastas do próprio Mac.
+- **Tags**, prioridades e uma tela para administrar tags; tela de **Projetos** com status, duplicar como modelo e **arquivar**.
+- **Relatórios em PDF** — por projeto ou geral, por período, com o seu **perfil** (logo, nome, contatos e cor da marca).
+- Tema **claro, escuro ou automático** e **aviso de atualização** quando sai versão nova.
 
-```
-npm start
-```
+## Instalar
 
-Fechar a janela não encerra o app: ele continua no ícone da barra de menus (lá em cima, perto do relógio). Para sair, use **Sair** nesse menu ou ⌘Q.
+1. Baixe o arquivo `.dmg` da [última versão](https://github.com/nazario-igor/organizador-projetos/releases/latest) (em *Assets*).
+2. Abra o `.dmg` e arraste o **Organizador de Projetos** para a pasta **Aplicativos**.
+3. Abra o app. Como ele não tem a assinatura paga da Apple, o Mac vai avisar que não pôde verificá-lo — clique em **OK**
+   (ou **Concluído**), vá em **Ajustes do Sistema → Privacidade e Segurança**, role até o aviso sobre o Organizador de
+   Projetos e clique em **Abrir Mesmo Assim**. Isso só é preciso na primeira vez (e depois de cada atualização).
+
+Fechar a janela não encerra o app: ele continua no ícone da barra de menus. Para sair, use **Sair** nesse menu ou ⌘Q.
 
 Atalhos: ⌘N nova tarefa · ⌘⇧N novo projeto · ⌘. Rec/Pausar.
 
-## Dados
+## Atualizar
 
-Tudo fica em um arquivo `organizador-dados.json` (veja **Dados e backup** na barra lateral). O app guarda uma cópia por dia na subpasta `backups`. Quando o Mac entra em repouso, o timer pausa sozinho.
+O app procura versão nova ao abrir e a cada 6 horas. Quando encontra, avisa com uma notificação, um destaque na
+barra lateral e no menu do ícone, mostrando o que mudou. Baixe o novo `.dmg`, feche o app e substitua o antigo em
+**Aplicativos** (depois, libere em **Privacidade e Segurança** como na instalação). Também dá para verificar pelo menu
+**Organizador de Projetos → Verificar atualizações…**
 
-Para usar em dois Macs, escolha uma pasta do iCloud Drive como pasta de dados nos dois.
+Seus dados ficam guardados fora do app e continuam lá depois da atualização.
 
-## Instalar e atualizar
+## Seus dados
 
-As versões ficam em https://github.com/nazario-igor/organizador-projetos/releases
+Tudo fica num único arquivo, `organizador-dados.json` (veja **Dados e backup** na barra lateral), e o app guarda
+sozinho uma cópia por dia na subpasta `backups`. Por lá também dá para exportar e importar backups.
 
-**Instalar:** baixe o `.dmg` da última versão, abra e arraste o app para **Aplicativos**.
-Na primeira vez, clique com o botão direito no app → **Abrir** (o app não tem assinatura paga da Apple).
+**Usar em dois Macs:** em **Dados e backup → Escolher pasta de dados**, escolha uma pasta sincronizada (iCloud Drive,
+Dropbox, Google Drive) nos dois Macs. Evite usar o app nos dois ao mesmo tempo.
 
-**Atualizar:** o app avisa sozinho quando há versão nova (notificação, aviso na barra lateral e no
-menu do ícone). É só baixar e substituir o app em Aplicativos — os dados ficam guardados à parte.
-
-### Publicar uma versão nova
-
-1. Aumente a versão: `npm version patch --no-git-tag-version` (ou `minor` para novidades maiores)
-2. Escreva o que mudou em `NOVIDADES.md`, numa seção `## x.y.z`
-3. Rode `npm run release` — gera o `.dmg` (Intel + Apple Silicon) e publica no GitHub
-
-O GitHub CLI fica em `~/.local/bin/gh` (logado na conta nazario-igor).
-
-## Desenvolvimento
-
-- `main.js` — janela, ícone da barra de menus, timer e arquivo de dados
-- `preload.js` — ponte segura entre a janela e o sistema
-- `src/` — interface (`app.js`, `gantt.js`, `calendar.js`, `styles.css`)
-- `npm run icons` — recria os ícones a partir de `assets/*.svg`
-- `npx electron scripts/smoke.js` — teste visual com dados de exemplo (não mexe nos seus dados)
-
-## Dados de demonstração
-
-Para testar com projetos e tarefas fictícios (feche o app antes):
-
-```
-node scripts/demo-data.js            # adiciona
-node scripts/demo-data.js --remover  # remove só os dados de demonstração
-```
-
-Os dados de demonstração têm ids começando com `demo-` e não mexem nos seus projetos. O script faz uma cópia do arquivo antes de alterar.
+Quando o Mac entra em repouso, o timer pausa sozinho para não contar horas com o computador fechado.
 
 ## Rodar a partir do código
 
@@ -74,12 +60,34 @@ npm install
 npm start
 ```
 
-- `npx electron scripts/smoke.js` — abre o app com dados de exemplo (numa pasta separada), navega pelas telas e salva prints
-- `node scripts/demo-data.js` — coloca projetos fictícios no app instalado (com o app fechado)
+A interface não usa frameworks: é HTML, CSS e JavaScript puros.
+
+- `main.js` — processo principal: janela, ícone da barra de menus, timer, arquivo de dados, PDFs e atualizações
+- `preload.js` — ponte segura entre a interface e o sistema
+- `src/` — interface: `app.js` (telas), `gantt.js`, `calendar.js`, `tasks.js` (subtarefas e dependências), `util.js`, `styles.css`
+- `scripts/` — utilitários (abaixo)
+
+Comandos úteis:
+
+- `npx electron scripts/smoke.js` — teste visual: abre o app com dados de exemplo numa pasta separada, passa pelas telas e salva prints
+- `node scripts/demo-data.js` — coloca projetos fictícios no app (feche o app antes); `--remover` tira só eles
+- `node scripts/demo-data.js --perfil` — preenche o perfil com uma empresa fictícia; `--remover-perfil` limpa
+- `npm run icons` — recria os ícones a partir de `assets/*.svg`
 - `npm run dist` — gera o instalador `.dmg` em `dist/`
 
-O app não usa frameworks na interface: é HTML, CSS e JavaScript puros em `src/`. O processo principal
-(`main.js`) cuida da janela, do ícone na barra de menus, do timer, dos arquivos e das atualizações.
+Os dados de demonstração têm ids começando com `demo-`, não mexem nos seus projetos, e o script faz uma cópia do
+arquivo de dados antes de alterar. O atalho `Abrir Organizador.command` abre o app a partir do código com dois cliques.
+
+### Publicar uma versão nova
+
+Precisa do [GitHub CLI](https://cli.github.com) (`gh`) logado numa conta com acesso ao repositório definido em
+`package.json → updates.repo`.
+
+1. Aumente a versão: `npm version patch --no-git-tag-version` (ou `minor` para novidades maiores)
+2. Escreva o que mudou em `NOVIDADES.md`, numa seção `## x.y.z` — esse texto aparece no aviso de atualização
+3. Salve e envie o código: `git add -A && git commit -m "Versão x.y.z" && git push`
+4. Rode `npm run release` — confere se o código está enviado, gera o `.dmg` (Intel + Apple Silicon) e publica a
+   versão no GitHub, marcada no commit enviado
 
 ## Quer continuar o projeto? Faça um fork
 
@@ -98,5 +106,4 @@ Duas dicas para a sua versão não se misturar com esta:
 
 [GNU GPL v3.0 ou posterior](LICENSE). Você pode usar, estudar, modificar e distribuir este programa,
 inclusive versões modificadas, desde que elas também sejam distribuídas sob a GPL, com o código-fonte aberto
-e mantendo os créditos.
-
+e mantendo os avisos de direitos autorais e de licença.
