@@ -81,10 +81,18 @@ npm start
 O app não usa frameworks na interface: é HTML, CSS e JavaScript puros em `src/`. O processo principal
 (`main.js`) cuida da janela, do ícone na barra de menus, do timer, dos arquivos e das atualizações.
 
-## Contribuir ou continuar o projeto
+## Quer continuar o projeto? Faça um fork
 
-Sugestões e correções são bem-vindas: abra uma *issue* ou um *pull request*.
-Também pode fazer um *fork* e seguir o seu próprio caminho — veja a licença abaixo.
+Este é um projeto pessoal, que evolui no meu ritmo e conforme as minhas necessidades.
+Por isso **não acompanho *issues* nem *pull requests*** — não é falta de interesse, só não consigo dar a atenção que eles merecem.
+
+Se o app te serviu e você quer mudar, corrigir ou levar ele para outro caminho, **o fork é muito bem-vindo**:
+copie o repositório, adapte do seu jeito e siga com a sua versão. A licença (abaixo) garante esse direito.
+
+Duas dicas para a sua versão não se misturar com esta:
+
+- Em `package.json`, troque `updates.repo` pelo seu repositório — senão o seu app vai avisar sobre as minhas versões.
+- Se for distribuir, troque também `build.appId` e `productName` — apps com o mesmo nome no Mac dividem a mesma pasta de dados.
 
 ## Licença
 
