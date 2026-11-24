@@ -1305,39 +1305,85 @@ function dayToolbar() {
     <span class="muted small day-range">das <select data-bind="day-h0">${Array.from({ length: 13 }, (_, i) => i).map((h) => `<option value="${h}" ${h === h0 ? 'selected' : ''}>${h}h</option>`).join('')}</select>
       às <select data-bind="day-h1">${Array.from({ length: 12 }, (_, i) => i + 13).map((h) => `<option value="${h}" ${h === h1 ? 'selected' : ''}>${h}h</option>`).join('')}</select></span>`;
 }
-// Tarefas (com e sem horário), reuniões e dependências de um dia, para os projetos indicados.
-function dayData(projectIds, date) {
-  const ids = new Set(projectIds);
+// Linhas da visão Horas: tarefas do dia com as tarefas-mãe (grupos), reuniões e, no geral, o projeto acima.
+// Irmãos ficam na ordem do horário (sem horário por último). Também devolve as setas de dependência.
+function dayRows(projectIds, date, byProject) {
   const today = U.todayKey();
   const plus1h = (t) => DayView.fromMin(Math.min(1440, DayView.toMin(t) + 60));
-  const items = [], allDay = [];
-  const tasks = S.tasks.filter((t) => ids.has(t.projectId) && !isGroup(t) && t.start <= date && taskEnd(t) >= date);
-  for (const t of tasks) {
-    const p = proj(t.projectId);
-    const base = { key: `t:${t.id}`, kind: 'task', id: t.id, title: t.title, isMs: t.type === 'entrega', color: p.color, project: p.name, done: !!t.done };
-    if (t.timeStart) items.push({ ...base, start: t.timeStart, end: base.isMs ? null : (t.timeEnd > t.timeStart ? t.timeEnd : plus1h(t.timeStart)), late: !t.done && taskEnd(t) < today });
-    else allDay.push(base);
+  const timeOf = (t) => (t.timeStart ? { start: t.timeStart, end: t.type === 'entrega' ? null : (t.timeEnd > t.timeStart ? t.timeEnd : plus1h(t.timeStart)) } : null);
+  const rows = [];
+  const timed = new Map(); // id → tarefa com horário mostrada
+  for (const pid of projectIds) {
+    const p = proj(pid);
+    const all = S.tasks.filter((t) => t.projectId === pid);
+    const leaves = all.filter((t) => !isGroup(t) && t.start <= date && taskEnd(t) >= date);
+    const meets = (S.meetings || []).filter((m) => m.projectId === pid && m.date === date);
+    if (!leaves.length && !meets.length) continue;
+    const keep = new Set();
+    leaves.forEach((t) => { keep.add(t.id); TaskTree.ancestors(all, t).forEach((x) => keep.add(x.id)); });
+    const kids = {};
+    all.filter((t) => keep.has(t.id)).forEach((t) => { (kids[t.parentId && keep.has(t.parentId) ? t.parentId : ''] ||= []).push(t); });
+    const leafTimes = (t) => (isGroup(t) ? (kids[t.id] || []).flatMap(leafTimes) : timeOf(t) ? [timeOf(t)] : []);
+    const sortKey = (t) => leafTimes(t).map((x) => x.start).sort()[0] || '99:99';
+    const base = byProject ? 1 : 0;
+    if (byProject) {
+      const closed = !!(prefs.dayProjClosed || {})[pid];
+      rows.push({ kind: 'project', key: `p:${pid}`, id: pid, title: p.name, color: p.color, closed, count: leaves.length + meets.length });
+      if (closed) continue;
+    }
+    const walk = (t, depth) => {
+      const has = isGroup(t);
+      const isCollapsed = has && !!prefs.collapsed[t.id];
+      let tm = null;
+      if (has) {
+        const ts = leafTimes(t);
+        if (ts.length) tm = { start: ts.map((x) => x.start).sort()[0], end: ts.map((x) => x.end || x.start).sort().pop() };
+      } else tm = timeOf(t);
+      if (!has && tm) timed.set(t.id, t);
+      rows.push({ kind: 'task', key: `t:${t.id}`, id: t.id, t, depth: depth + base, has, isCollapsed, group: has, title: t.title, color: p.color,
+        isMs: t.type === 'entrega', done: !!t.done, late: !t.done && taskEnd(t) < today, start: tm ? tm.start : null, end: tm ? tm.end : null });
+      if (!isCollapsed) (kids[t.id] || []).slice().sort((x, y) => sortKey(x).localeCompare(sortKey(y)) || x.title.localeCompare(y.title)).forEach((c) => walk(c, depth + 1));
+    };
+    const top = [...(kids[''] || []).map((t) => ({ k: sortKey(t), n: t.title, t })), ...meets.map((m) => ({ k: m.start, n: m.title, m }))]
+      .sort((x, y) => x.k.localeCompare(y.k) || x.n.localeCompare(y.n));
+    for (const x of top) {
+      if (x.t) { walk(x.t, 0); continue; }
+      const m = x.m;
+      rows.push({ kind: 'meeting', key: `m:${m.id}`, id: m.id, m, depth: base, title: m.title, color: p.color, start: m.start,
+        end: m.end > m.start ? m.end : plus1h(m.start), done: meetEnd(m).getTime() < Date.now() });
+    }
   }
-  for (const m of S.meetings || []) {
-    if (!ids.has(m.projectId) || m.date !== date) continue;
-    const p = proj(m.projectId);
-    items.push({ key: `m:${m.id}`, kind: 'meeting', id: m.id, title: m.title, start: m.start, end: m.end > m.start ? m.end : plus1h(m.start), color: p.color, project: p.name, done: meetEnd(m).getTime() < Date.now() });
-  }
-  items.sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title));
-  const timed = new Set(items.filter((i) => i.kind === 'task').map((i) => i.id));
   const links = [];
-  for (const t of tasks) {
-    if (!timed.has(t.id)) continue;
+  for (const t of timed.values()) {
     for (const d of t.deps || []) {
-      if (!timed.has(d)) continue;
-      const p = task(d);
+      const p = timed.get(d);
+      if (!p) continue;
       const pEnd = p.type === 'entrega' ? p.timeStart : (p.timeEnd || p.timeStart);
       // No mesmo dia, a seguinte não pode começar antes de a anterior terminar.
       const bad = taskEnd(p) === date && t.start === date && t.timeStart < pEnd;
       links.push({ from: `t:${d}`, to: `t:${t.id}`, bad });
     }
   }
-  return { items, allDay, links };
+  return { rows, links };
+}
+function dayLabel(r) {
+  if (r.kind === 'project') {
+    return `<div class="g-label dv-proj-label">
+      <button class="g-caret${r.closed ? ' closed' : ''}" data-action="day-proj-toggle" data-id="${r.id}" title="${r.closed ? 'Expandir' : 'Recolher'}">▾</button>
+      <span class="dot" style="background:${r.color}"></span>
+      <button class="g-title strong" data-action="open-project" data-id="${r.id}" title="Abrir o projeto">${U.esc(r.title)}</button>
+      <span class="g-dates">${r.count} no dia</span></div>`;
+  }
+  if (r.kind === 'meeting') {
+    const m = r.m;
+    return `<div class="g-label" style="padding-left:${10 + r.depth * 18}px">
+      <span class="g-caret-sp"></span><span class="meet-ic" title="Reunião">◷</span>
+      <button class="g-title${r.done ? ' done' : ''}" data-action="edit-meeting" data-id="${m.id}" title="${U.esc(m.title)}">${U.esc(m.title)}</button>
+      ${m.link && !r.done ? `<button class="meet-join" data-action="meeting-join" data-id="${m.id}" title="${U.esc(m.link)}">Entrar ↗</button>` : ''}
+      <span class="g-dates">${meetTime(m)}</span></div>`;
+  }
+  const dates = r.start ? (r.isMs ? `◆ ${r.start}` : `${r.start}–${r.end}`) : r.has ? '' : r.isMs ? '◆ dia todo' : 'dia todo';
+  return Gantt.labelHtml(r.t, { depth: r.depth, has: r.has, isCollapsed: r.isCollapsed, late: r.late, dates });
 }
 function setItemTime(it, patch) {
   if (it.kind === 'meeting') {
@@ -1356,17 +1402,22 @@ function setItemTime(it, patch) {
   }
   commit();
 }
-function renderDayView(host, projectIds, showProject) {
+function renderDayView(host, projectIds, byProject) {
   host.classList.add('dv-host');
-  const { items, allDay, links } = dayData(projectIds, dayDate());
+  const { rows, links } = dayRows(projectIds, dayDate(), byProject);
+  const pid = projectIds.length === 1 ? projectIds[0] : '';
   DayView.render(host, {
-    date: dayDate(), items, allDay, links, showProject,
+    date: dayDate(), rows, links, labelHtml: dayLabel,
     hours: [prefs.dayH0 ?? 8, Math.max((prefs.dayH0 ?? 8) + 1, prefs.dayH1 ?? 18)],
-    onEdit: (it) => (it.kind === 'meeting' ? meetingModal(meeting(it.id)) : taskModal(task(it.id))),
+    footerHtml: `<div class="g-label">
+      <button class="link-btn" data-action="new-task" data-type="tarefa" data-date="${dayDate()}">＋ Tarefa</button>
+      <button class="link-btn" data-action="new-task" data-type="entrega" data-date="${dayDate()}">＋ Entrega</button>
+      <button class="link-btn" data-action="new-meeting" data-date="${dayDate()}" ${pid ? `data-project="${pid}"` : ''}>＋ Reunião</button></div>`,
+    onEdit: (r) => (r.kind === 'meeting' ? meetingModal(meeting(r.id)) : r.kind === 'task' ? taskModal(task(r.id)) : null),
     onTime: setItemTime,
   });
 }
-const DAY_HELP = 'Arraste as barras para mudar o horário (de 15 em 15 min) · puxe as bordas para mudar a duração · arraste da faixa ☀ Dia todo para dar um horário, e de volta para tirar · clique para editar';
+const DAY_HELP = 'Arraste as barras para mudar o horário (de 15 em 15 min) · puxe as bordas para mudar a duração · numa linha sem horário, arraste no espaço vazio para marcar · solte a barra no cabeçalho para tirar o horário · ＋ na linha cria subtarefa no dia';
 
 function renderTimeline(c) {
   c.className = 'fill';
@@ -1494,8 +1545,8 @@ function renderGanttTab(p, b) {
   if (prefs.zoom === 'horas') {
     b.innerHTML = `
       <div class="toolbar wrap">
-        <button class="btn primary" data-action="new-task" data-type="tarefa">＋ Tarefa</button>
-        <button class="btn" data-action="new-meeting" data-project="${p.id}">＋ Reunião</button>
+        <button class="btn primary" data-action="new-task" data-type="tarefa" data-date="${dayDate()}">＋ Tarefa</button>
+        <button class="btn" data-action="new-meeting" data-project="${p.id}" data-date="${dayDate()}">＋ Reunião</button>
         ${dayToolbar()}${zoomSeg(prefs.zoom, 'gantt-zoom')}
       </div>
       <div id="ganttHost" class="gantt-host"></div>
@@ -1804,8 +1855,8 @@ function taskModal(t, defaults = {}) {
     const pid = defaults.projectId || (view.name === 'project' ? view.projectId : prefs.calProject) || activeProjects()[0]?.id || S.projects[0]?.id;
     if (!pid) return projectModal();
     const parent = defaults.parentId ? task(defaults.parentId) : null;
-    const start = parent ? parent.start : defaults.date || today;
-    const end = parent ? taskEnd(parent) : defaults.date ? start : U.addDays(start, 4);
+    const start = defaults.date || (parent ? parent.start : today);
+    const end = defaults.date ? start : parent ? taskEnd(parent) : U.addDays(start, 4);
     t = { projectId: parent ? parent.projectId : pid, parentId: parent ? parent.id : null, deps: [], type: defaults.type || 'tarefa', title: '', start, end: defaults.type === 'entrega' ? start : end, progress: 0, done: false, notes: '' };
   }
   const tags = [...(t.tags || [])];
@@ -2344,7 +2395,8 @@ const ACTIONS = {
     timerOp(() => api.timerStart({ projectId: t.projectId, taskId: t.id, description: S.timer.projectId === t.projectId && S.timer.taskId === t.id ? S.timer.description : '' }));
   },
 
-  'new-task': (el) => taskModal(null, { type: el.dataset.type }),
+  'new-task': (el) => taskModal(null, { type: el.dataset.type, date: el.dataset.date || null }),
+  'day-proj-toggle': (el) => { prefs.dayProjClosed ||= {}; prefs.dayProjClosed[el.dataset.id] = !prefs.dayProjClosed[el.dataset.id]; savePrefs(); renderContent(); },
   'toggle-focus': (el) => {
     const t = task(el.dataset.id);
     t.focusDate = isFocus(t) ? null : U.todayKey();
@@ -2362,7 +2414,8 @@ const ACTIONS = {
   'dash-clear': () => { Object.assign(dashFilters(), { tags: [], project: '', prio: '' }); savePrefs(); renderContent(); },
   'new-subtask': (el) => {
     prefs.collapsed[el.dataset.id] = false; savePrefs();
-    taskModal(null, { type: 'tarefa', parentId: el.dataset.id });
+    const inDay = (view.name === 'project' && prefs.zoom === 'horas') || (view.name === 'timeline' && prefs.ovZoom === 'horas');
+    taskModal(null, { type: 'tarefa', parentId: el.dataset.id, date: inDay ? dayDate() : null });
   },
   'gantt-collapse': (el) => { prefs.collapsed[el.dataset.id] = !prefs.collapsed[el.dataset.id]; savePrefs(); renderContent(); },
   'gantt-expand-all': () => {

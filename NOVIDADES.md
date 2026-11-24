@@ -2,6 +2,16 @@
 
 Cada versão tem uma seção `## x.y.z`. O texto dela aparece no aviso de atualização do app.
 
+## 1.3.1
+
+O **zoom Horas** ficou com a mesma praticidade do cronograma por dias.
+
+- A lista da esquerda é a mesma do Gantt: **concluir** pela caixa, **grupos e subtarefas** (abrir e fechar), prioridade, tags, link e **＋ para criar subtarefa** já no dia mostrado
+- **＋ Tarefa, ＋ Entrega e ＋ Reunião** no fim da lista, já no dia mostrado
+- A barra do grupo vai do primeiro ao último horário das subtarefas
+- Numa linha **sem horário**, clique no espaço vazio para marcar 1 hora ou arraste para desenhar o horário; para tirar o horário, solte a barra no cabeçalho
+- No **Cronograma geral**, as tarefas do dia ficam agrupadas por projeto (dá para recolher cada um)
+
 ## 1.3.0
 
 **Reuniões** nos projetos e **zoom Horas** no cronograma para organizar o dia.

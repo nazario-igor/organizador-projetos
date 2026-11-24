@@ -110,16 +110,7 @@ const Gantt = (() => {
       }
       const link = `<div class="g-link" data-id="${t.id}" style="left:${g.right + 1}px" title="Arraste até outra tarefa para criar uma dependência"></div>`;
       return `<div class="g-row${has ? ' parent' : ''}" data-id="${t.id}">
-        <div class="g-label" style="padding-left:${10 + depth * 18}px">
-          ${has
-            ? `<button class="g-caret${isCollapsed ? ' closed' : ''}" data-action="gantt-collapse" data-id="${t.id}" title="${isCollapsed ? 'Expandir' : 'Recolher'}">▾</button>`
-            : '<span class="g-caret-sp"></span>'}
-          <input type="checkbox" data-action="toggle-done" data-id="${t.id}" ${t.done ? 'checked' : ''} title="Concluída">
-          <button class="g-title${t.done ? ' done' : ''}" data-action="edit-task" data-id="${t.id}" title="${U.esc(t.title)}${(t.tags || []).length ? ' · #' + t.tags.map(U.esc).join(' #') : ''}">${t.priority === 'alta' ? '<span class="prio p-alta">⚑</span> ' : ''}${isMs ? '<span class="ms-icon">◆</span>' : ''}${U.esc(t.title)}${(t.tags || []).length ? `<span class="g-tagdots">${t.tags.slice(0, 3).map((tg) => `<i style="background:${tagColor(tg)}"></i>`).join('')}</span>` : ''}</button>
-          ${(t.links || []).length ? `<button class="link-ic" data-action="open-task-link" data-id="${t.id}" title="${t.links.length === 1 ? 'Abrir link' : t.links.length + ' links'}">🔗</button>` : ''}
-          ${!isMs ? `<button class="g-add" data-action="new-subtask" data-id="${t.id}" title="Adicionar subtarefa">＋</button>` : ''}
-          <span class="g-dates${late ? ' late' : ''}">${dates}</span>
-        </div>
+        ${labelHtml(t, { depth, has, isCollapsed, late, dates })}
         <div class="g-track" style="width:${width}px">${bar}${link}</div>
       </div>`;
     }).join('');
@@ -312,6 +303,21 @@ const Gantt = (() => {
     }
   }
 
+  // Coluna da esquerda de uma tarefa (usada também na visão Horas): concluir, grupo, prioridade, tags, link, ＋ subtarefa.
+  function labelHtml(t, { depth = 0, has = false, isCollapsed = false, late = false, dates = '' } = {}) {
+    const isMs = t.type === 'entrega';
+    return `<div class="g-label" style="padding-left:${10 + depth * 18}px">
+      ${has
+        ? `<button class="g-caret${isCollapsed ? ' closed' : ''}" data-action="gantt-collapse" data-id="${t.id}" title="${isCollapsed ? 'Expandir' : 'Recolher'}">▾</button>`
+        : '<span class="g-caret-sp"></span>'}
+      <input type="checkbox" data-action="toggle-done" data-id="${t.id}" ${t.done ? 'checked' : ''} title="Concluída">
+      <button class="g-title${t.done ? ' done' : ''}" data-action="edit-task" data-id="${t.id}" title="${U.esc(t.title)}${(t.tags || []).length ? ' · #' + t.tags.map(U.esc).join(' #') : ''}">${t.priority === 'alta' ? '<span class="prio p-alta">⚑</span> ' : ''}${isMs ? '<span class="ms-icon">◆</span>' : ''}${U.esc(t.title)}${(t.tags || []).length ? `<span class="g-tagdots">${t.tags.slice(0, 3).map((tg) => `<i style="background:${tagColor(tg)}"></i>`).join('')}</span>` : ''}</button>
+      ${(t.links || []).length ? `<button class="link-ic" data-action="open-task-link" data-id="${t.id}" title="${t.links.length === 1 ? 'Abrir link' : t.links.length + ' links'}">🔗</button>` : ''}
+      ${!isMs ? `<button class="g-add" data-action="new-subtask" data-id="${t.id}" title="Adicionar subtarefa">＋</button>` : ''}
+      <span class="g-dates${late ? ' late' : ''}">${dates}</span>
+    </div>`;
+  }
+
   // Cronograma geral: uma linha por projeto (barra do início ao fim + entregas),
   // que pode ser expandida para mostrar as tarefas principais. Só visualização.
   function renderOverview(host, { projects, tasks, zoom, expanded, projectInfo }) {
@@ -421,5 +427,5 @@ const Gantt = (() => {
     scrollMemory[`${projectId}:${zoom}`] = Math.max(0, left);
   }
 
-  return { render, renderOverview, scrollToToday, ZOOMS };
+  return { render, renderOverview, scrollToToday, labelHtml, ZOOMS };
 })();
