@@ -861,3 +861,12 @@ button.tchip:hover { border-color: color-mix(in srgb, var(--c) 50%, transparent)
 .day-title { font-weight: 600; white-space: nowrap; }
 .day-title.is-today { color: var(--accent-text); }
 .day-range select { padding: 2px 4px; }
+
+/* Reuniões no Gantt */
+.g-meet { position: absolute; top: 10px; width: 16px; height: 16px; padding: 0; border-radius: 50%; z-index: 3;
+  background: var(--panel); border: 1.5px solid var(--accent); color: var(--accent-text); font-size: 10px; line-height: 13px; text-align: center; cursor: pointer; }
+.g-meet:hover { background: var(--accent); color: #fff; }
+.g-meet.small { width: 14px; height: 14px; top: 12px; font-size: 9px; line-height: 11px; }
+.g-meet.done { opacity: .55; }
+.g-meet-row .g-title { cursor: default; }
+.task-meets { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }

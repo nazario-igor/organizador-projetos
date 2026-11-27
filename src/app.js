@@ -23,7 +23,13 @@ let saveT = null;
 function save() { clearTimeout(saveT); saveT = setTimeout(flush, 250); }
 async function flush() { clearTimeout(saveT); saveT = null; await api.setState(S, BASE?.id); }
 // Recalcula grupos (subtarefas) e, se ligado, empurra tarefas dependentes.
+function cleanMeetingLinks() {
+  for (const m of S.meetings || []) {
+    if (m.taskId && !S.tasks.some((t) => t.id === m.taskId && t.projectId === m.projectId)) delete m.taskId;
+  }
+}
 function scheduleTasks() {
+  cleanMeetingLinks();
   TaskTree.normalize(S.tasks);
   if (prefs.autoSchedule !== false) TaskTree.schedule(S.tasks); else TaskTree.rollup(S.tasks);
   refreshGroups();
@@ -50,6 +56,7 @@ function prepareState() {
   if (!Array.isArray(S.meetings)) S.meetings = [];
   S.meetings = S.meetings.filter((m) => m && m.id && /^\d{4}-\d{2}-\d{2}$/.test(m.date || '') && /^\d{2}:\d{2}$/.test(m.start || ''));
   sanitizeState();
+  cleanMeetingLinks();
   if (syncMeetingEntries()) save();
   TaskTree.normalize(S.tasks);
   TaskTree.repairDeps(S.tasks);
@@ -1000,7 +1007,7 @@ function buildProjectReport(p, o) {
       <thead><tr><th>Data</th><th>Horário</th><th>Assunto</th><th>Participantes</th><th>Pauta e anotações</th></tr></thead>
       <tbody>${meets.map((m) => `<tr>
         <td>${fmtFull(m.date)}</td><td>${meetTime(m)}</td>
-        <td><b>${U.esc(m.title)}</b>${m.location ? `<br><span class="rep-muted">${U.esc(m.location)}</span>` : ''}${m.link ? `<br><span class="rep-muted">${U.esc(m.link)}</span>` : ''}</td>
+        <td><b>${U.esc(m.title)}</b>${m.taskId && task(m.taskId) ? `<br><span class="rep-muted">↳ ${U.esc(task(m.taskId).title)}</span>` : ''}${m.location ? `<br><span class="rep-muted">${U.esc(m.location)}</span>` : ''}${m.link ? `<br><span class="rep-muted">${U.esc(m.link)}</span>` : ''}</td>
         <td>${U.esc(m.participants || '')}</td>
         <td>${m.notes ? `<div class="md">${U.markdown(m.notes)}</div>` : ''}</td>
       </tr>`).join('')}</tbody></table>` : '<p class="rep-muted">Nenhuma reunião no período.</p>'}</section>`;
@@ -1321,6 +1328,9 @@ function dayRows(projectIds, date, byProject) {
     if (!leaves.length && !meets.length) continue;
     const keep = new Set();
     leaves.forEach((t) => { keep.add(t.id); TaskTree.ancestors(all, t).forEach((x) => keep.add(x.id)); });
+    const meetUnder = {}; // tarefa → reuniões ligadas a ela no dia
+    const plusMeet = (m, depth) => rows.push({ kind: 'meeting', key: `m:${m.id}`, id: m.id, m, depth, title: m.title, color: p.color, start: m.start,
+      end: m.end > m.start ? m.end : plus1h(m.start), done: meetEnd(m).getTime() < Date.now() });
     const kids = {};
     all.filter((t) => keep.has(t.id)).forEach((t) => { (kids[t.parentId && keep.has(t.parentId) ? t.parentId : ''] ||= []).push(t); });
     const leafTimes = (t) => (isGroup(t) ? (kids[t.id] || []).flatMap(leafTimes) : timeOf(t) ? [timeOf(t)] : []);
@@ -1342,15 +1352,17 @@ function dayRows(projectIds, date, byProject) {
       if (!has && tm) timed.set(t.id, t);
       rows.push({ kind: 'task', key: `t:${t.id}`, id: t.id, t, depth: depth + base, has, isCollapsed, group: has, title: t.title, color: p.color,
         isMs: t.type === 'entrega', done: !!t.done, late: !t.done && taskEnd(t) < today, start: tm ? tm.start : null, end: tm ? tm.end : null });
-      if (!isCollapsed) (kids[t.id] || []).slice().sort((x, y) => sortKey(x).localeCompare(sortKey(y)) || x.title.localeCompare(y.title)).forEach((c) => walk(c, depth + 1));
+      if (!isCollapsed) {
+        (meetUnder[t.id] || []).sort(byMeetTime).forEach((m) => plusMeet(m, depth + 1 + base));
+        (kids[t.id] || []).slice().sort((x, y) => sortKey(x).localeCompare(sortKey(y)) || x.title.localeCompare(y.title)).forEach((c) => walk(c, depth + 1));
+      }
     };
-    const top = [...(kids[''] || []).map((t) => ({ k: sortKey(t), n: t.title, t })), ...meets.map((m) => ({ k: m.start, n: m.title, m }))]
+    const looseMeets = [];
+    for (const m of meets) { if (m.taskId && keep.has(m.taskId)) (meetUnder[m.taskId] ||= []).push(m); else looseMeets.push(m); }
+    const top = [...(kids[''] || []).map((t) => ({ k: sortKey(t), n: t.title, t })), ...looseMeets.map((m) => ({ k: m.start, n: m.title, m }))]
       .sort((x, y) => x.k.localeCompare(y.k) || x.n.localeCompare(y.n));
     for (const x of top) {
-      if (x.t) { walk(x.t, 0); continue; }
-      const m = x.m;
-      rows.push({ kind: 'meeting', key: `m:${m.id}`, id: m.id, m, depth: base, title: m.title, color: p.color, start: m.start,
-        end: m.end > m.start ? m.end : plus1h(m.start), done: meetEnd(m).getTime() < Date.now() });
+      if (x.t) walk(x.t, 0); else plusMeet(x.m, base);
     }
   }
   const links = [];
@@ -1462,6 +1474,7 @@ function renderTimeline(c) {
   }
   Gantt.renderOverview(host, {
     projects, tasks, zoom: prefs.ovZoom, expanded: prefs.ovExpanded,
+    meetings: (S.meetings || []).filter((m) => ids.has(m.projectId)),
     projectInfo: (p) => ({ progress: projectProgress(p.id), isGroup }),
   });
 }
@@ -1580,6 +1593,7 @@ function renderGanttTab(p, b) {
   }
   Gantt.render(host, {
     projectId: p.id, color: p.color, tasks, zoom: prefs.zoom, collapsed: prefs.collapsed,
+    meetings: (S.meetings || []).filter((m) => m.projectId === p.id),
     onEdit: (t) => taskModal(t),
     onChange: (t, patch) => { TaskTree.move(S.tasks, t, patch.start, patch.end); commit(); },
     onLink: (fromId, toId) => {
@@ -1652,7 +1666,8 @@ function meetingCard(m) {
   const d = U.fromKey(m.date);
   const past = meetEnd(m).getTime() < Date.now();
   const first = (m.notes || '').split('\n').map((x) => x.replace(/^[#>*\-\s\[\]x]+/i, '').trim()).find(Boolean);
-  const meta = [`${U.DIAS[d.getDay()]}, ${meetTime(m)}`, m.location, m.participants].filter(Boolean).map(U.esc).join(' · ');
+  const lt = m.taskId ? task(m.taskId) : null;
+  const meta = [`${U.DIAS[d.getDay()]}, ${meetTime(m)}`, lt ? `↳ ${lt.type === 'entrega' ? '◆ ' : ''}${lt.title}` : '', m.location, m.participants].filter(Boolean).map(U.esc).join(' · ');
   return `<div class="meet-card${past ? ' past' : ''}${m.date === U.todayKey() ? ' today' : ''}">
     <div class="meet-date"><b>${d.getDate()}</b><small>${U.MESES_CURTOS[d.getMonth()]}${d.getFullYear() !== new Date().getFullYear() ? ' ' + d.getFullYear() : ''}</small></div>
     <button class="meet-main" data-action="edit-meeting" data-id="${m.id}">
@@ -1913,6 +1928,9 @@ function taskModal(t, defaults = {}) {
       <label class="field only-task"><span>Progresso: <b class="prog-v">${t.progress || 0}%</b></span><input type="range" name="progress" min="0" max="100" step="5" value="${t.progress || 0}" ${group ? 'disabled' : ''}></label>
       <label class="check"><input type="checkbox" name="done" ${t.done ? 'checked' : ''}> Concluída${group ? ' (marca todas as subtarefas)' : ''}</label>
       <div class="field" style="margin-top:12px"><span>Depende de <small class="muted">(pode começar no mesmo dia em que ela termina)</small></span><div class="deps-list">${depOptions(t.projectId)}</div></div>
+      ${!isNew ? `<div class="field"><span>Reuniões</span><div class="task-meets">${(S.meetings || []).filter((m) => m.taskId === t.id).sort(byMeetTime)
+        .map((m) => `<button type="button" class="link-btn" data-action="edit-meeting" data-id="${m.id}">◷ ${U.fmtDate(m.date)} ${meetTime(m)} · ${U.esc(m.title)}</button>`).join('')}
+        <button type="button" class="link-btn" data-action="new-meeting" data-task="${t.id}">＋ Reunião ${t.type === 'entrega' ? 'para esta entrega' : 'para esta tarefa'}</button></div></div>` : ''}
       <div class="field"><span>Links (pasta do Drive, arquivos, referências)</span><div class="links-editor"></div></div>
       <label class="field"><span>Observações</span><textarea name="notes" rows="3">${U.esc(t.notes || '')}</textarea></label>
       ${!isNew ? `<p class="muted small">${spent ? `⏱ ${U.dur(spent)} registradas nesta tarefa.` : ''} <button class="link-btn" data-action="record-task" data-id="${t.id}">▶ Gravar horas nesta tarefa</button></p>` : ''}`,
@@ -2011,14 +2029,19 @@ function taskModal(t, defaults = {}) {
 }
 
 const REMINDERS = [[0, 'Sem lembrete'], [5, '5 min antes'], [10, '10 min antes'], [15, '15 min antes'], [30, '30 min antes'], [60, '1 hora antes']];
+// Tarefas e entregas de um projeto para ligar a uma reunião.
+const meetTaskOptions = (pid, sel) => `<option value="">Nenhuma</option>` + TaskTree.ordered(S.tasks.filter((t) => t.projectId === pid))
+  .map(({ t, depth }) => `<option value="${t.id}" ${t.id === sel ? 'selected' : ''}>${'\u2003'.repeat(depth)}${t.type === 'entrega' ? '◆ ' : ''}${U.esc(t.title)}</option>`).join('');
+
 function meetingModal(m, defaults = {}) {
   const isNew = !m;
   if (isNew) {
     const nowD = new Date();
     const h = Math.min(23, nowD.getHours() + 1);
-    const pid = defaults.projectId || (view.name === 'project' ? view.projectId : prefs.calProject) || activeProjects()[0]?.id || S.projects[0]?.id;
+    const linked = defaults.taskId ? task(defaults.taskId) : null;
+    const pid = (linked && linked.projectId) || defaults.projectId || (view.name === 'project' ? view.projectId : prefs.calProject) || activeProjects()[0]?.id || S.projects[0]?.id;
     m = { projectId: pid, title: '', date: defaults.date || U.todayKey(), start: `${U.pad(h)}:00`, end: `${U.pad(Math.min(23, h + 1))}:00`,
-      link: '', location: '', participants: '', notes: '', remind: 10, logHours: true };
+      link: '', location: '', participants: '', notes: '', remind: 10, logHours: true, taskId: linked ? linked.id : null };
   }
   const { el } = modal({
     title: isNew ? 'Nova reunião' : 'Editar reunião',
@@ -2038,6 +2061,7 @@ function meetingModal(m, defaults = {}) {
         <label class="field flex1"><span>Local <small class="muted">(opcional)</small></span><input name="location" value="${U.esc(m.location || '')}" placeholder="Ex.: escritório do cliente"></label>
       </div>
       <label class="field"><span>Participantes</span><input name="participants" value="${U.esc(m.participants || '')}" placeholder="Ex.: Ana (cliente), Bruno"></label>
+      <label class="field"><span>Ligada a <small class="muted">(tarefa ou entrega do projeto, opcional)</small></span><select name="taskId">${meetTaskOptions(m.projectId, m.taskId)}</select></label>
       <label class="field"><span>Pauta e anotações <small class="muted">(aceita listas com "- " e "- [ ]")</small></span><textarea name="notes" rows="6" placeholder="O que tratar, decisões, próximos passos…">${U.esc(m.notes || '')}</textarea></label>
       <div class="field-row meet-opts">
         <label class="field"><span>Lembrete</span><select name="remind">${REMINDERS.map(([v, l]) => `<option value="${v}" ${Number(m.remind ?? 0) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
@@ -2061,6 +2085,7 @@ function meetingModal(m, defaults = {}) {
           projectId: val(el2, 'projectId'), title, date, start, end: val(el2, 'end'),
           link: val(el2, 'link'), location: val(el2, 'location'), participants: val(el2, 'participants'),
           notes: $('[name=notes]', el2).value, remind: Number(val(el2, 'remind')) || 0, logHours: $('[name=logHours]', el2).checked,
+          taskId: val(el2, 'taskId') || null,
         };
         if (isNew) { S.meetings ||= []; S.meetings.push({ id: U.uid(), ...data }); } else Object.assign(m, data);
         syncMeetingEntries();
@@ -2068,6 +2093,7 @@ function meetingModal(m, defaults = {}) {
       } },
     ],
   });
+  $('[name=projectId]', el).addEventListener('change', (ev) => { $('[name=taskId]', el).innerHTML = meetTaskOptions(ev.target.value, null); });
   // Fim acompanha o início (mantém a duração) enquanto o usuário não mexer no fim.
   let endTouched = !isNew;
   const toMin = (t) => { const [a, b] = t.split(':').map(Number); return a * 60 + b; };
@@ -2531,7 +2557,7 @@ const ACTIONS = {
 
   'h-period': (el) => { prefs.hPeriod = el.dataset.p; savePrefs(); renderContent(); },
   'new-entry': () => entryModal(),
-  'new-meeting': (el) => meetingModal(null, { projectId: el.dataset.project || null, date: el.dataset.date || null }),
+  'new-meeting': (el) => meetingModal(null, { projectId: el.dataset.project || null, date: el.dataset.date || null, taskId: el.dataset.task || null }),
   'edit-meeting': (el) => { const m = meeting(el.dataset.id); if (m) meetingModal(m); },
   'meeting-join': (el) => { const m = meeting(el.dataset.id); if (m && m.link) openLink(m.link); },
   'edit-entry': (el) => entryModal(S.timeEntries.find((e) => e.id === el.dataset.id)),

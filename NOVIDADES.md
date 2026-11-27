@@ -2,6 +2,17 @@
 
 Cada versão tem uma seção `## x.y.z`. O texto dela aparece no aviso de atualização do app.
 
+## 1.3.2
+
+**Reuniões no cronograma e ligadas a tarefas.**
+
+- Na janela da reunião, o campo **Ligada a** liga a reunião a uma tarefa, subtarefa ou entrega do projeto
+- No **cronograma (Gantt)**, cada reunião aparece como ◷ na linha da tarefa ligada, no dia dela; as sem tarefa ficam numa linha "Reuniões sem tarefa". Clique no ◷ para abrir
+- Se o grupo estiver recolhido, a reunião da subtarefa aparece na linha do grupo
+- No **Cronograma geral**, as reuniões aparecem na linha de cada projeto
+- A janela da tarefa lista as reuniões dela e tem **＋ Reunião para esta tarefa**
+- Na visão **Horas**, a reunião aparece logo abaixo da tarefa ligada; no cartão da reunião e no PDF aparece a tarefa (↳)
+
 ## 1.3.1
 
 O **zoom Horas** ficou com a mesma praticidade do cronograma por dias.

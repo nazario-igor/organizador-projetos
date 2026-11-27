@@ -57,9 +57,17 @@ const Gantt = (() => {
     return `M${x1},${y1} H${x1 + g} V${yb} H${x2 - g} V${y2} H${x2}`;
   }
 
-  function render(host, { projectId, color, tasks, zoom, collapsed, onEdit, onChange, onLink }) {
+  // Marcador de reunião (◷) na data dela; clique abre a reunião.
+  function meetMark(m, x, small) {
+    const past = m.date < U.todayKey();
+    return `<button class="g-meet${small ? ' small' : ''}${past ? ' done' : ''}" style="left:${x - (small ? 7 : 8)}px" data-action="edit-meeting" data-id="${m.id}"
+      title="◷ Reunião ${U.fmtDate(m.date)}, ${m.start}${m.end ? '–' + m.end : ''}: ${U.esc(m.title)}">◷</button>`;
+  }
+  const meetDates = (meetings) => meetings.map((m) => ({ start: m.date, end: m.date }));
+
+  function render(host, { projectId, color, tasks, meetings = [], zoom, collapsed, onEdit, onChange, onLink }) {
     const dayW = ZOOMS[zoom] || ZOOMS.dia;
-    const { start, days } = range(tasks, zoom);
+    const { start, days } = range([...tasks, ...meetDates(meetings)], zoom);
     const width = days * dayW;
     const today = U.todayKey();
     const order = TaskTree.ordered(tasks, collapsed);
@@ -68,6 +76,17 @@ const Gantt = (() => {
     visible.forEach((r, i) => { rowIndex[r.t.id] = i; });
     const byId = Object.fromEntries(tasks.map((t) => [t.id, t]));
     const kidsCount = TaskTree.childrenMap(tasks);
+
+    // Reuniões: na linha da tarefa/entrega ligada (ou do grupo recolhido que a esconde); as soltas numa linha própria.
+    const meetsByRow = {};
+    const loose = [];
+    for (const m of meetings) {
+      const t = m.taskId && byId[m.taskId];
+      let row = null;
+      if (t) row = rowIndex[t.id] != null ? t : TaskTree.ancestors(tasks, t).reverse().find((a) => rowIndex[a.id] != null && collapsed[a.id]) || null;
+      if (row) (meetsByRow[row.id] ||= []).push(m); else loose.push(m);
+    }
+    const meetX = (m) => U.diffDays(start, m.date) * dayW + dayW / 2;
 
     // Posição horizontal de cada tarefa.
     const geo = (t) => {
@@ -111,9 +130,14 @@ const Gantt = (() => {
       const link = `<div class="g-link" data-id="${t.id}" style="left:${g.right + 1}px" title="Arraste até outra tarefa para criar uma dependência"></div>`;
       return `<div class="g-row${has ? ' parent' : ''}" data-id="${t.id}">
         ${labelHtml(t, { depth, has, isCollapsed, late, dates })}
-        <div class="g-track" style="width:${width}px">${bar}${link}</div>
+        <div class="g-track" style="width:${width}px">${bar}${link}${(meetsByRow[t.id] || []).map((m) => meetMark(m, meetX(m))).join('')}</div>
       </div>`;
     }).join('');
+    const looseRow = loose.length ? `<div class="g-row g-meet-row">
+        <div class="g-label"><span class="g-caret-sp"></span><span class="meet-ic">◷</span>
+          <span class="g-title muted">Reuniões sem tarefa</span><span class="g-dates">${loose.length}</span></div>
+        <div class="g-track" style="width:${width}px">${loose.map((m) => meetMark(m, meetX(m))).join('')}</div>
+      </div>` : '';
 
     // Setas de dependência. Tarefas escondidas em grupos recolhidos usam a linha do grupo.
     const visibleRowOf = (t) => {
@@ -160,6 +184,7 @@ const Gantt = (() => {
               <div class="g-today" style="left:${todayLeft}px"></div>
             </div>
             ${rows}
+            ${looseRow}
             <svg class="g-deps" style="left:${LABEL_W}px;width:${width}px;height:${bodyH}px" width="${width}" height="${bodyH}">
               <defs>
                 <marker id="g-arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" class="g-arr-head"/></marker>
@@ -320,9 +345,9 @@ const Gantt = (() => {
 
   // Cronograma geral: uma linha por projeto (barra do início ao fim + entregas),
   // que pode ser expandida para mostrar as tarefas principais. Só visualização.
-  function renderOverview(host, { projects, tasks, zoom, expanded, projectInfo }) {
+  function renderOverview(host, { projects, tasks, meetings = [], zoom, expanded, projectInfo }) {
     const dayW = ZOOMS[zoom] || ZOOMS.semana;
-    const { start, days } = range(tasks, zoom);
+    const { start, days } = range([...tasks, ...meetDates(meetings)], zoom);
     const width = days * dayW;
     const today = U.todayKey();
     const xOf = (k) => U.diffDays(start, k) * dayW;
@@ -366,7 +391,7 @@ const Gantt = (() => {
           ${late ? `<span class="ov-late" title="${late} tarefa(s) atrasada(s)">${late}</span>` : ''}
           <span class="g-dates">${info.progress == null ? '—' : info.progress + '%'}</span>
         </div>
-        <div class="g-track" style="width:${width}px">${bar}</div>
+        <div class="g-track" style="width:${width}px">${bar}${meetings.filter((m) => m.projectId === p.id).map((m) => meetMark(m, xOf(m.date) + dayW / 2, true)).join('')}</div>
       </div>`;
 
       if (isOpen) {
