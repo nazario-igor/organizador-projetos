@@ -1302,7 +1302,17 @@ function loadLogo(file) {
 const ZOOM_BTNS = [['horas', 'Horas'], ['dia', 'Dias'], ['semana', 'Semanas'], ['mes', 'Meses']];
 let dayDateSel = null; // dia mostrado na visão Horas (volta para hoje ao abrir o app)
 const dayDate = () => dayDateSel || U.todayKey();
-const zoomSeg = (cur, action) => `<div class="seg">${ZOOM_BTNS.map(([z, l]) => `<button class="${cur === z ? 'active' : ''}" data-action="${action}" data-zoom="${z}">${l}</button>`).join('')}</div>`;
+// Nível de zoom dentro de cada formato (0 = mais detalhe … 2 = mais amplo), guardado por tela.
+const ZL_DEFAULT = { horas: 2, dia: 1, semana: 1, mes: 1 };
+const HOUR_PX = [180, 110, 0]; // visão Horas: largura de uma hora (0 = cabe na tela)
+function zoomLevel(isOv, z) { const k = isOv ? 'ovZoomLvl' : 'zoomLvl'; prefs[k] ||= {}; return prefs[k][z] ?? ZL_DEFAULT[z]; }
+const zoomSeg = (cur, action) => {
+  const isOv = action === 'ov-zoom';
+  return `<div class="seg" title="⌘ + rolagem muda o zoom (3 níveis em cada formato)">${ZOOM_BTNS.map(([z, l]) => {
+    const lv = zoomLevel(isOv, z);
+    return `<button class="${cur === z ? 'active' : ''}" data-action="${action}" data-zoom="${z}">${l}${cur === z ? `<span class="zl" title="Nível ${3 - lv} de 3">${[0, 1, 2].map((i) => `<i class="${i < 3 - lv ? 'on' : ''}"></i>`).join('')}</span>` : ''}</button>`;
+  }).join('')}</div>`;
+};
 function dayToolbar() {
   const d = dayDate();
   const h0 = prefs.dayH0 ?? 8, h1 = prefs.dayH1 ?? 18;
@@ -1416,6 +1426,7 @@ function setItemTime(it, patch) {
 }
 function renderDayView(host, projectIds, byProject) {
   host.classList.add('dv-host');
+  const focus = ganttFocus; ganttFocus = null;
   const { rows, links } = dayRows(projectIds, dayDate(), byProject);
   const pid = projectIds.length === 1 ? projectIds[0] : '';
   DayView.render(host, {
@@ -1427,6 +1438,7 @@ function renderDayView(host, projectIds, byProject) {
       <button class="link-btn" data-action="new-meeting" data-date="${dayDate()}" ${pid ? `data-project="${pid}"` : ''}>＋ Reunião</button></div>`,
     onEdit: (r) => (r.kind === 'meeting' ? meetingModal(meeting(r.id)) : r.kind === 'task' ? taskModal(task(r.id)) : null),
     onTime: setItemTime,
+    hourPx: HOUR_PX[zoomLevel(byProject, 'horas')], focus,
   });
 }
 const NAV_HELP = '⌘ + rolagem (ou pinça no trackpad) muda o zoom · segure espaço e arraste para mover';
@@ -1450,9 +1462,10 @@ document.addEventListener('wheel', (e) => {
   zoomLock = Date.now() + 280;
   const isOv = host.id === 'ovHost';
   const cur = isOv ? prefs.ovZoom : prefs.zoom;
-  const i = Math.max(0, ZOOM_STEPS.indexOf(cur));
-  const ni = Math.max(0, Math.min(ZOOM_STEPS.length - 1, i + dir));
+  const i = Math.max(0, ZOOM_STEPS.indexOf(cur)) * 3 + zoomLevel(isOv, cur);
+  const ni = Math.max(0, Math.min(ZOOM_STEPS.length * 3 - 1, i + dir));
   if (ni === i) return;
+  const nz = ZOOM_STEPS[Math.floor(ni / 3)];
   // Dia sob o mouse e onde ele está na área do cronograma (sem a coluna da lista).
   const sc = host.querySelector('.g-scroll, .dv-scroll');
   const x = sc ? e.clientX - sc.getBoundingClientRect().left - 350 : 300;
@@ -1461,9 +1474,19 @@ document.addEventListener('wheel', (e) => {
     const scale = host.querySelector('.g-scale');
     if (scale) date = U.addDays(host.dataset.start, Math.max(0, Math.floor((e.clientX - scale.getBoundingClientRect().left) / +host.dataset.dayw)));
   }
-  if (ZOOM_STEPS[ni] === 'horas') dayDateSel = date;
-  ganttFocus = { date, x: Math.max(0, x) };
-  if (isOv) prefs.ovZoom = ZOOM_STEPS[ni]; else prefs.zoom = ZOOM_STEPS[ni];
+  // Na visão Horas: o horário sob o mouse.
+  let min = null;
+  if (cur === 'horas' && host.dataset.h0) {
+    const scale = host.querySelector('.dv-scale');
+    const h0 = +host.dataset.h0, h1 = +host.dataset.h1;
+    if (scale) { const r = scale.getBoundingClientRect(); min = h0 * 60 + ((e.clientX - r.left) / r.width) * (h1 - h0) * 60; }
+  }
+  if (nz === 'horas' && cur !== 'horas') dayDateSel = date;
+  ganttFocus = { date, x: Math.max(0, x), min };
+  const k = isOv ? 'ovZoomLvl' : 'zoomLvl';
+  prefs[k] ||= {};
+  prefs[k][nz] = ni % 3;
+  if (isOv) prefs.ovZoom = nz; else prefs.zoom = nz;
   savePrefs();
   renderContent();
 }, { passive: false });
@@ -1547,7 +1570,7 @@ function renderTimeline(c) {
   }
   const focus = ganttFocus; ganttFocus = null;
   Gantt.renderOverview(host, {
-    projects, tasks, zoom: prefs.ovZoom, expanded: prefs.ovExpanded, focus,
+    projects, tasks, zoom: prefs.ovZoom, expanded: prefs.ovExpanded, focus, level: zoomLevel(true, prefs.ovZoom),
     meetings: (S.meetings || []).filter((m) => ids.has(m.projectId)),
     projectInfo: (p) => ({ progress: projectProgress(p.id), isGroup }),
   });
@@ -1668,7 +1691,7 @@ function renderGanttTab(p, b) {
   }
   const focus = ganttFocus; ganttFocus = null;
   Gantt.render(host, {
-    projectId: p.id, color: p.color, tasks, zoom: prefs.zoom, collapsed: prefs.collapsed, focus,
+    projectId: p.id, color: p.color, tasks, zoom: prefs.zoom, collapsed: prefs.collapsed, focus, level: zoomLevel(false, prefs.zoom),
     meetings: (S.meetings || []).filter((m) => m.projectId === p.id),
     onMeetEdit: (m) => meetingModal(meeting(m.id)),
     onMeetChange: (m, patch) => { const x = meeting(m.id); if (!x) return; Object.assign(x, patch); syncMeetingEntries(); commit(); },

@@ -885,3 +885,8 @@ button.tchip:hover { border-color: color-mix(in srgb, var(--c) 50%, transparent)
 /* Mover o cronograma segurando espaço */
 body.space-pan .g-scroll, body.space-pan .g-scroll *, body.space-pan .dv-scroll, body.space-pan .dv-scroll * { cursor: grab !important; }
 body.panning, body.panning * { cursor: grabbing !important; user-select: none; }
+
+/* Nível do zoom (3 pontinhos no botão do formato ativo) */
+.zl { display: inline-flex; gap: 2px; margin-left: 6px; vertical-align: middle; }
+.zl i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: .25; }
+.zl i.on { opacity: 1; }

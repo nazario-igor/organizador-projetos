@@ -2,6 +2,12 @@
 
 Cada versão tem uma seção `## x.y.z`. O texto dela aparece no aviso de atualização do app.
 
+## 1.3.5
+
+- **3 níveis de zoom em cada formato** (Horas, Dias, Semanas e Meses): ⌘ + rolagem passa por 12 degraus, do mais detalhado ao mais amplo
+- Na visão **Horas**, os níveis mais próximos alargam as horas (dá para rolar para os lados), mantendo no lugar o horário sob o mouse
+- O botão do formato ativo mostra o nível em pontinhos; clicar num formato mantém o nível que você deixou nele
+
 ## 1.3.4
 
 **Reuniões como linhas do cronograma.**

@@ -1,6 +1,9 @@
 // Gráfico de Gantt: subtarefas (grupos recolhíveis), dependências com setas, barras arrastáveis e zoom.
 const Gantt = (() => {
   const ZOOMS = { dia: 34, semana: 15, mes: 5 };
+  // Três níveis em cada formato (largura de um dia, em px): do mais detalhado ao mais amplo.
+  const LEVELS = { dia: [50, 38, 28], semana: [21, 16, 12], mes: [8, 6, 4] };
+  const widthOf = (zoom, level, fallback) => (LEVELS[zoom] || LEVELS[fallback])[level ?? 1] || ZOOMS[fallback];
   const LABEL_W = 350;
   const scrollMemory = {};
 
@@ -74,8 +77,8 @@ const Gantt = (() => {
     return true;
   }
 
-  function render(host, { projectId, color, tasks, meetings = [], zoom, collapsed, onEdit, onChange, onLink, onMeetEdit, onMeetChange, focus }) {
-    const dayW = ZOOMS[zoom] || ZOOMS.dia;
+  function render(host, { projectId, color, tasks, meetings = [], zoom, collapsed, onEdit, onChange, onLink, onMeetEdit, onMeetChange, focus, level }) {
+    const dayW = widthOf(zoom, level, 'dia');
     const { start, days } = range([...tasks, ...meetDates(meetings)], zoom);
     const width = days * dayW;
     const today = U.todayKey();
@@ -431,8 +434,8 @@ const Gantt = (() => {
 
   // Cronograma geral: uma linha por projeto (barra do início ao fim + entregas),
   // que pode ser expandida para mostrar as tarefas principais. Só visualização.
-  function renderOverview(host, { projects, tasks, meetings = [], zoom, expanded, projectInfo, focus }) {
-    const dayW = ZOOMS[zoom] || ZOOMS.semana;
+  function renderOverview(host, { projects, tasks, meetings = [], zoom, expanded, projectInfo, focus, level }) {
+    const dayW = widthOf(zoom, level, 'semana');
     const { start, days } = range([...tasks, ...meetDates(meetings)], zoom);
     const width = days * dayW;
     const today = U.todayKey();
@@ -539,5 +542,5 @@ const Gantt = (() => {
     scrollMemory[`${projectId}:${zoom}`] = Math.max(0, left);
   }
 
-  return { render, renderOverview, scrollToToday, labelHtml, ZOOMS };
+  return { render, renderOverview, scrollToToday, labelHtml, ZOOMS, LEVELS };
 })();

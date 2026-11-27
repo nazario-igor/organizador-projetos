@@ -10,7 +10,8 @@ const DayView = (() => {
   // rows: [{ key, kind: 'task'|'meeting'|'project', id, start?, end?, isMs?, group?, color, title, done, late }]
   // labelHtml(row) → HTML da coluna da esquerda; footerHtml → linha final (＋ Tarefa…)
   // links: [{ from, to, bad }] (keys)
-  function render(host, { date, rows, links = [], hours = [8, 18], labelHtml, footerHtml = '', onEdit, onTime }) {
+  // hourPx: largura de uma hora (0 = cabe na tela). focus: { min, x } mantém o horário sob o mouse.
+  function render(host, { date, rows, links = [], hours = [8, 18], labelHtml, footerHtml = '', onEdit, onTime, hourPx = 0, focus = null }) {
     const today = U.todayKey();
     let h0 = hours[0], h1 = hours[1];
     for (const r of rows) {
@@ -56,6 +57,12 @@ const DayView = (() => {
     </div></div>`;
 
     const root = host.querySelector('.dv');
+    host.dataset.h0 = h0;
+    host.dataset.h1 = h1;
+    if (hourPx) root.style.minWidth = `${350 + nHours * hourPx}px`;
+    if (focus && focus.min != null && hourPx) {
+      host.querySelector('.dv-scroll').scrollLeft = Math.max(0, ((focus.min - h0 * 60) / 60) * hourPx - focus.x);
+    }
     const byKey = Object.fromEntries(rows.map((r) => [r.key, r]));
     const trackRect = () => root.querySelector('.dv-scale').getBoundingClientRect();
     const minAtX = (x) => {
