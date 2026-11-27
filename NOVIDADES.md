@@ -2,6 +2,10 @@
 
 Cada versão tem uma seção `## x.y.z`. O texto dela aparece no aviso de atualização do app.
 
+## 1.3.6
+
+- **Painel:** a tarefa concluída hoje continua no lugar, riscada, até o fim do dia; some só no dia seguinte (e desmarcar volta ao normal)
+
 ## 1.3.5
 
 - **3 níveis de zoom em cada formato** (Horas, Dias, Semanas e Meses): ⌘ + rolagem passa por 12 degraus, do mais detalhado ao mais amplo

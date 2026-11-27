@@ -485,7 +485,9 @@ function renderDashboard(c) {
   const open = live.filter((t) => !t.done);
   const byPrio = (a, b) => prioW(a) - prioW(b) || taskEnd(a).localeCompare(taskEnd(b));
   const focus = live.filter((t) => isFocus(t)).sort((a, b) => (a.done - b.done) || byPrio(a, b));
-  const shown = open.filter(passesDash);
+  // Concluídas hoje continuam no painel (riscadas, no mesmo lugar) e só saem no dia seguinte.
+  const doneToday = live.filter((t) => t.done && t.doneAt === today);
+  const shown = [...open, ...doneToday].filter(passesDash);
   const lateAll = open.filter((t) => taskEnd(t) < today).length; // contador geral, sem filtros
   const late = shown.filter((t) => taskEnd(t) < today).sort((a, b) => taskEnd(a).localeCompare(taskEnd(b)) || prioW(a) - prioW(b));
   // Com horário primeiro, na ordem do dia; depois as demais por prioridade.
@@ -2069,6 +2071,7 @@ function taskModal(t, defaults = {}) {
           data.timeEnd = ts && te ? te : undefined;
         }
         if (done && !group) { if (!t.done) data.prevProgress = +val(el2, 'progress') || 0; data.progress = 100; }
+        if (!group) data.doneAt = done ? (t.done && t.doneAt ? t.doneAt : today) : undefined; // dia da conclusão (o painel mostra até o fim do dia)
         if (isNew) S.tasks.push({ id: U.uid(), createdAt: new Date().toISOString(), ...data });
         else {
           if (projectId !== t.projectId) {
@@ -2079,7 +2082,7 @@ function taskModal(t, defaults = {}) {
           }
           const wasDone = t.done;
           Object.assign(t, data);
-          if (group && done !== wasDone) kids.forEach((k) => { k.done = done; if (done) k.progress = 100; });
+          if (group && done !== wasDone) kids.forEach((k) => { k.done = done; if (done) { k.progress = 100; k.doneAt = today; } else delete k.doneAt; });
         }
         commit();
       } },
@@ -2568,7 +2571,7 @@ const ACTIONS = {
     const targets = isGroup(t) ? TaskTree.descendants(S.tasks, t.id).filter((x) => !isGroup(x)) : [t];
     for (const x of targets) {
       x.done = el.checked;
-      if (x.done) { x.prevProgress = x.progress; x.progress = 100; } else x.progress = x.prevProgress ?? 0;
+      if (x.done) { x.prevProgress = x.progress; x.progress = 100; x.doneAt = U.todayKey(); } else { x.progress = x.prevProgress ?? 0; delete x.doneAt; }
     }
     commit();
   },
