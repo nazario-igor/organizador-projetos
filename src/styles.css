@@ -870,3 +870,18 @@ button.tchip:hover { border-color: color-mix(in srgb, var(--c) 50%, transparent)
 .g-meet.done { opacity: .55; }
 .g-meet-row .g-title { cursor: default; }
 .task-meets { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+
+/* Reunião como linha do Gantt */
+.g-mbar { position: absolute; top: 9px; height: 20px; border-radius: 5px; z-index: 2; cursor: grab;
+  background: color-mix(in srgb, var(--c) 14%, var(--panel)); border: 1.5px solid var(--c); }
+.g-mbar.done { opacity: .5; }
+.g-mbar.dragging { cursor: grabbing; z-index: 4; }
+.g-mbar .g-h { position: absolute; top: -2px; bottom: -2px; width: 7px; cursor: ew-resize; }
+.g-mbar .g-h-l { left: -8px; }
+.g-mbar .g-h-r { right: -8px; }
+.g-mrow .g-title { font-style: normal; }
+.g-addm { font-size: 12px; }
+
+/* Mover o cronograma segurando espaço */
+body.space-pan .g-scroll, body.space-pan .g-scroll *, body.space-pan .dv-scroll, body.space-pan .dv-scroll * { cursor: grab !important; }
+body.panning, body.panning * { cursor: grabbing !important; user-select: none; }

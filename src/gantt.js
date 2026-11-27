@@ -65,28 +65,69 @@ const Gantt = (() => {
   }
   const meetDates = (meetings) => meetings.map((m) => ({ start: m.date, end: m.date }));
 
-  function render(host, { projectId, color, tasks, meetings = [], zoom, collapsed, onEdit, onChange, onLink }) {
+  // Depois de trocar o zoom: deixa o dia que estava sob o mouse no mesmo lugar da tela.
+  function applyFocus(host, scroller, start, dayW, focus) {
+    host.dataset.start = start;
+    host.dataset.dayw = dayW;
+    if (!focus || !focus.date) return false;
+    scroller.scrollLeft = Math.max(0, U.diffDays(start, focus.date) * dayW + dayW / 2 - focus.x);
+    return true;
+  }
+
+  function render(host, { projectId, color, tasks, meetings = [], zoom, collapsed, onEdit, onChange, onLink, onMeetEdit, onMeetChange, focus }) {
     const dayW = ZOOMS[zoom] || ZOOMS.dia;
     const { start, days } = range([...tasks, ...meetDates(meetings)], zoom);
     const width = days * dayW;
     const today = U.todayKey();
     const order = TaskTree.ordered(tasks, collapsed);
-    const visible = order.filter((r) => !r.hiddenBy);
-    const rowIndex = {};
-    visible.forEach((r, i) => { rowIndex[r.t.id] = i; });
+    const taskRows = order.filter((r) => !r.hiddenBy);
     const byId = Object.fromEntries(tasks.map((t) => [t.id, t]));
     const kidsCount = TaskTree.childrenMap(tasks);
 
-    // Reuniões: na linha da tarefa/entrega ligada (ou do grupo recolhido que a esconde); as soltas numa linha própria.
-    const meetsByRow = {};
+    // Reuniões viram linhas: logo abaixo da tarefa/entrega ligada (escondidas se o grupo estiver recolhido);
+    // as sem tarefa entram entre as tarefas principais, pela data.
+    const byTime = (a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start);
+    const shownTasks = new Set(taskRows.map((r) => r.t.id));
+    const meetUnder = {};
     const loose = [];
     for (const m of meetings) {
       const t = m.taskId && byId[m.taskId];
-      let row = null;
-      if (t) row = rowIndex[t.id] != null ? t : TaskTree.ancestors(tasks, t).reverse().find((a) => rowIndex[a.id] != null && collapsed[a.id]) || null;
-      if (row) (meetsByRow[row.id] ||= []).push(m); else loose.push(m);
+      if (t) { if (shownTasks.has(t.id)) (meetUnder[t.id] ||= []).push(m); } else loose.push(m);
     }
-    const meetX = (m) => U.diffDays(start, m.date) * dayW + dayW / 2;
+    loose.sort(byTime);
+    const visible = [];
+    let li = 0;
+    for (const r of taskRows) {
+      if (r.depth === 0) while (li < loose.length && loose[li].date < r.t.start) visible.push({ m: loose[li++], depth: 0 });
+      visible.push(r);
+      for (const m of (meetUnder[r.t.id] || []).sort(byTime)) visible.push({ m, depth: r.depth + 1 });
+    }
+    while (li < loose.length) visible.push({ m: loose[li++], depth: 0 });
+    const rowIndex = {};
+    visible.forEach((r, i) => { rowIndex[r.t ? r.t.id : `m:${r.m.id}`] = i; });
+    const meetById = Object.fromEntries(meetings.map((m) => [m.id, m]));
+
+    // Barra da reunião: ocupa a parte do dia correspondente ao horário.
+    const fromMin = (n) => (n >= 1440 ? '23:59' : DayView.fromMin(n));
+    const mStart = (m) => DayView.toMin(m.start);
+    const mEnd = (m) => (m.end && m.end > m.start ? DayView.toMin(m.end) : Math.min(1440, mStart(m) + 60));
+    const mGeo = (m, s = mStart(m), e = mEnd(m), date = m.date) => ({ left: U.diffDays(start, date) * dayW + (s / 1440) * dayW, w: Math.max(8, ((e - s) / 1440) * dayW) });
+    const meetRow = (m, depth) => {
+      const past = m.date < today;
+      const g = mGeo(m);
+      return `<div class="g-row g-mrow" data-meet="${m.id}">
+        <div class="g-label" style="padding-left:${10 + depth * 18}px">
+          <span class="g-caret-sp"></span><span class="meet-ic" title="Reunião">◷</span>
+          <button class="g-title${past ? ' done' : ''}" data-action="edit-meeting" data-id="${m.id}" title="${U.esc(m.title)}">${U.esc(m.title)}</button>
+          ${m.link && !past ? `<button class="meet-join" data-action="meeting-join" data-id="${m.id}" title="${U.esc(m.link)}">Entrar ↗</button>` : ''}
+          <span class="g-dates">${U.fmtDate(m.date)} · ${m.start}</span>
+        </div>
+        <div class="g-track" style="width:${width}px">
+          <div class="g-mbar${past ? ' done' : ''}" data-meet="${m.id}" style="left:${g.left}px;width:${g.w}px" title="${U.esc(m.title)} — arraste para mudar o dia; puxe as pontas para ajustar o horário"><div class="g-h g-h-l"></div><div class="g-h g-h-r"></div></div>
+          <div class="g-out-label" style="left:${g.left + g.w + 8}px">${m.start}–${fromMin(mEnd(m))} · ${U.esc(m.title)}</div>
+        </div>
+      </div>`;
+    };
 
     // Posição horizontal de cada tarefa.
     const geo = (t) => {
@@ -105,7 +146,9 @@ const Gantt = (() => {
       `background-position-x:${satIdx * dayW}px${zoom === 'dia' ? ', 0' : ''}`,
     ].join(';');
 
-    const rows = visible.map(({ t, depth, has }) => {
+    const rows = visible.map((vr) => {
+      if (vr.m) return meetRow(vr.m, vr.depth);
+      const { t, depth, has } = vr;
       const isMs = t.type === 'entrega';
       const end = TaskTree.endOf(t);
       const late = !t.done && end < today;
@@ -130,14 +173,9 @@ const Gantt = (() => {
       const link = `<div class="g-link" data-id="${t.id}" style="left:${g.right + 1}px" title="Arraste até outra tarefa para criar uma dependência"></div>`;
       return `<div class="g-row${has ? ' parent' : ''}" data-id="${t.id}">
         ${labelHtml(t, { depth, has, isCollapsed, late, dates })}
-        <div class="g-track" style="width:${width}px">${bar}${link}${(meetsByRow[t.id] || []).map((m) => meetMark(m, meetX(m))).join('')}</div>
+        <div class="g-track" style="width:${width}px">${bar}${link}</div>
       </div>`;
     }).join('');
-    const looseRow = loose.length ? `<div class="g-row g-meet-row">
-        <div class="g-label"><span class="g-caret-sp"></span><span class="meet-ic">◷</span>
-          <span class="g-title muted">Reuniões sem tarefa</span><span class="g-dates">${loose.length}</span></div>
-        <div class="g-track" style="width:${width}px">${loose.map((m) => meetMark(m, meetX(m))).join('')}</div>
-      </div>` : '';
 
     // Setas de dependência. Tarefas escondidas em grupos recolhidos usam a linha do grupo.
     const visibleRowOf = (t) => {
@@ -184,7 +222,6 @@ const Gantt = (() => {
               <div class="g-today" style="left:${todayLeft}px"></div>
             </div>
             ${rows}
-            ${looseRow}
             <svg class="g-deps" style="left:${LABEL_W}px;width:${width}px;height:${bodyH}px" width="${width}" height="${bodyH}">
               <defs>
                 <marker id="g-arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" class="g-arr-head"/></marker>
@@ -209,6 +246,7 @@ const Gantt = (() => {
     const memKey = `${projectId}:${zoom}`;
     if (scrollMemory[memKey] != null) scroller.scrollLeft = scrollMemory[memKey];
     else scroller.scrollLeft = Math.max(0, todayLeft - 7 * dayW * (zoom === 'dia' ? 1 : 2));
+    if (applyFocus(host, scroller, start, dayW, focus)) scrollMemory[memKey] = scroller.scrollLeft;
     if (scrollMemory[projectId + ':top'] != null) scroller.scrollTop = scrollMemory[projectId + ':top'];
     scroller.addEventListener('scroll', () => {
       scrollMemory[memKey] = scroller.scrollLeft;
@@ -223,6 +261,8 @@ const Gantt = (() => {
       if (e.button !== 0) return;
       const linkEl = e.target.closest('.g-link');
       if (linkEl) return startLink(e, linkEl);
+      const mbar = e.target.closest('.g-mbar');
+      if (mbar) return startMeetDrag(e, mbar);
       const bar = e.target.closest('.g-bar, .g-ms, .g-sum');
       if (bar) startDrag(e, bar);
     });
@@ -251,6 +291,50 @@ const Gantt = (() => {
         body.classList.remove('linking');
         temp.setAttribute('d', '');
         if (hoverRow) { hoverRow.classList.remove('link-target'); onLink(fromId, hoverRow.dataset.id); }
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    }
+
+    // Arrastar reunião: o meio muda o dia (mantém o horário); as pontas ajustam o horário (15 min a cada 4 px).
+    function startMeetDrag(e, el) {
+      e.preventDefault();
+      const m = meetById[el.dataset.meet];
+      if (!m) return;
+      const mode = e.target.classList.contains('g-h-l') ? 'l' : e.target.classList.contains('g-h-r') ? 'r' : 'move';
+      const s0 = mStart(m), e0 = mEnd(m), x0 = e.clientX;
+      let date = m.date, s = s0, en = e0, moved = false;
+      const label = el.parentElement.querySelector('.g-out-label');
+      const tip = document.createElement('div');
+      tip.className = 'g-tip';
+      document.body.appendChild(tip);
+      const onMove = (ev) => {
+        const dx = ev.clientX - x0;
+        if (Math.abs(dx) > 3) { moved = true; el.classList.add('dragging'); }
+        if (!moved) return;
+        if (mode === 'move') date = U.addDays(m.date, Math.round(dx / dayW));
+        else {
+          const dm = Math.round(dx / 4) * 15;
+          if (mode === 'l') s = Math.max(0, Math.min(e0 - 15, s0 + dm));
+          else en = Math.min(1440, Math.max(s0 + 15, e0 + dm));
+        }
+        const g = mGeo(m, s, en, date);
+        el.style.left = `${g.left}px`;
+        el.style.width = `${g.w}px`;
+        label.style.left = `${g.left + g.w + 8}px`;
+        label.textContent = `${fromMin(s)}–${fromMin(en)} · ${m.title}`;
+        tip.textContent = `${U.fmtDate(date)} · ${fromMin(s)}–${fromMin(en)}`;
+        tip.style.left = `${ev.clientX + 12}px`;
+        tip.style.top = `${ev.clientY + 14}px`;
+        tip.style.display = 'block';
+      };
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        tip.remove();
+        el.classList.remove('dragging');
+        if (!moved) { onMeetEdit && onMeetEdit(m); return; }
+        if (date !== m.date || s !== s0 || en !== e0) onMeetChange && onMeetChange(m, { date, start: fromMin(s), end: fromMin(en) });
       };
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
@@ -340,13 +424,14 @@ const Gantt = (() => {
       <button class="g-title${t.done ? ' done' : ''}" data-action="edit-task" data-id="${t.id}" title="${U.esc(t.title)}${(t.tags || []).length ? ' · #' + t.tags.map(U.esc).join(' #') : ''}">${t.priority === 'alta' ? '<span class="prio p-alta">⚑</span> ' : ''}${isMs ? '<span class="ms-icon">◆</span>' : ''}${U.esc(t.title)}${(t.tags || []).length ? `<span class="g-tagdots">${t.tags.slice(0, 3).map((tg) => `<i style="background:${tagColor(tg)}"></i>`).join('')}</span>` : ''}</button>
       ${(t.links || []).length ? `<button class="link-ic" data-action="open-task-link" data-id="${t.id}" title="${t.links.length === 1 ? 'Abrir link' : t.links.length + ' links'}">🔗</button>` : ''}
       ${!isMs ? `<button class="g-add" data-action="new-subtask" data-id="${t.id}" title="Adicionar subtarefa">＋</button>` : ''}
+      <button class="g-add g-addm" data-action="new-meeting" data-task="${t.id}" title="Adicionar reunião ${isMs ? 'para esta entrega' : 'para esta tarefa'}">◷</button>
       <span class="g-dates${late ? ' late' : ''}">${dates}</span>
     </div>`;
   }
 
   // Cronograma geral: uma linha por projeto (barra do início ao fim + entregas),
   // que pode ser expandida para mostrar as tarefas principais. Só visualização.
-  function renderOverview(host, { projects, tasks, meetings = [], zoom, expanded, projectInfo }) {
+  function renderOverview(host, { projects, tasks, meetings = [], zoom, expanded, projectInfo, focus }) {
     const dayW = ZOOMS[zoom] || ZOOMS.semana;
     const { start, days } = range([...tasks, ...meetDates(meetings)], zoom);
     const width = days * dayW;
@@ -441,6 +526,7 @@ const Gantt = (() => {
     host.dataset.memId = `__overview@${start}`;
     const memKey = `${host.dataset.memId}:${zoom}`;
     scroller.scrollLeft = scrollMemory[memKey] ?? Math.max(0, todayLeft - 10 * dayW * (zoom === 'dia' ? 1 : 2));
+    if (applyFocus(host, scroller, start, dayW, focus)) scrollMemory[memKey] = scroller.scrollLeft;
     scroller.addEventListener('scroll', () => { scrollMemory[memKey] = scroller.scrollLeft; });
   }
 

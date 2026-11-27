@@ -2,6 +2,17 @@
 
 Cada versão tem uma seção `## x.y.z`. O texto dela aparece no aviso de atualização do app.
 
+## 1.3.4
+
+**Reuniões como linhas do cronograma.**
+
+- Cada reunião é uma linha do Gantt: a ligada a uma tarefa ou subtarefa fica logo abaixo dela; as sem tarefa entram entre as tarefas, pela data
+- O nome da reunião na lista abre a reunião, e a barra ocupa a parte do dia correspondente ao horário
+- **Arraste** a barra para mudar o dia (o horário se mantém) e **puxe as pontas** para ajustar o horário, de 15 em 15 min
+- Botão **◷** ao lado do ＋ de cada tarefa ou entrega: cria uma reunião já ligada a ela
+- **Zoom com ⌘ + rolagem** (ou pinça no trackpad) no cronograma do projeto e no geral: alterna em degraus entre Horas, Dias, Semanas e Meses, mantendo no lugar o dia que está sob o mouse (de Dias para Horas, abre esse dia)
+- **Segure espaço e arraste** para mover o cronograma para os lados (e para cima e para baixo)
+
 ## 1.3.3
 
 - Botão **◷ Reunião** no cronograma do projeto (zooms Dias, Semanas e Meses), no topo e no fim da lista

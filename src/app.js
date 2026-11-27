@@ -1429,7 +1429,80 @@ function renderDayView(host, projectIds, byProject) {
     onTime: setItemTime,
   });
 }
-const DAY_HELP = 'Arraste as barras para mudar o horário (de 15 em 15 min) · puxe as bordas para mudar a duração · numa linha sem horário, arraste no espaço vazio para marcar · solte a barra no cabeçalho para tirar o horário · ＋ na linha cria subtarefa no dia';
+const NAV_HELP = '⌘ + rolagem (ou pinça no trackpad) muda o zoom · segure espaço e arraste para mover';
+const DAY_HELP = `Arraste as barras para mudar o horário (de 15 em 15 min) · puxe as bordas para mudar a duração · numa linha sem horário, arraste no espaço vazio para marcar · solte a barra no cabeçalho para tirar o horário · ＋ na linha cria subtarefa no dia · ${NAV_HELP}`;
+
+// ---------- Zoom com ⌘ + rolagem e mover segurando espaço ----------
+const ZOOM_STEPS = ['horas', 'dia', 'semana', 'mes'];
+let ganttFocus = null; // dia que fica sob o mouse depois de trocar o zoom
+let zoomAcc = 0;
+let zoomLock = 0;
+document.addEventListener('wheel', (e) => {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const host = e.target.closest && e.target.closest('#ganttHost, #ovHost');
+  if (!host) return;
+  e.preventDefault();
+  if (Date.now() < zoomLock) return;
+  zoomAcc += e.deltaY;
+  if (Math.abs(zoomAcc) < 30) return;
+  const dir = zoomAcc > 0 ? 1 : -1; // afastar = menos detalhe (Horas → Dias → Semanas → Meses)
+  zoomAcc = 0;
+  zoomLock = Date.now() + 280;
+  const isOv = host.id === 'ovHost';
+  const cur = isOv ? prefs.ovZoom : prefs.zoom;
+  const i = Math.max(0, ZOOM_STEPS.indexOf(cur));
+  const ni = Math.max(0, Math.min(ZOOM_STEPS.length - 1, i + dir));
+  if (ni === i) return;
+  // Dia sob o mouse e onde ele está na área do cronograma (sem a coluna da lista).
+  const sc = host.querySelector('.g-scroll, .dv-scroll');
+  const x = sc ? e.clientX - sc.getBoundingClientRect().left - 350 : 300;
+  let date = dayDate();
+  if (cur !== 'horas' && host.dataset.start) {
+    const scale = host.querySelector('.g-scale');
+    if (scale) date = U.addDays(host.dataset.start, Math.max(0, Math.floor((e.clientX - scale.getBoundingClientRect().left) / +host.dataset.dayw)));
+  }
+  if (ZOOM_STEPS[ni] === 'horas') dayDateSel = date;
+  ganttFocus = { date, x: Math.max(0, x) };
+  if (isOv) prefs.ovZoom = ZOOM_STEPS[ni]; else prefs.zoom = ZOOM_STEPS[ni];
+  savePrefs();
+  renderContent();
+}, { passive: false });
+
+let spaceDown = false;
+let panning = null;
+let justPanned = false;
+const typingIn = (el) => el && el.matches && el.matches('input, textarea, select, [contenteditable], [contenteditable] *');
+const endSpace = () => { spaceDown = false; panning = null; document.body.classList.remove('space-pan', 'panning'); };
+document.addEventListener('keydown', (e) => {
+  if (e.code !== 'Space' || typingIn(e.target) || $('#modalRoot').children.length) return;
+  if (!document.querySelector('.g-scroll, .dv-scroll')) return;
+  e.preventDefault(); // não rola a página nem aperta o botão focado
+  if (!spaceDown) { spaceDown = true; document.body.classList.add('space-pan'); }
+}, true);
+document.addEventListener('keyup', (e) => { if (e.code === 'Space') endSpace(); }, true);
+window.addEventListener('blur', endSpace);
+document.addEventListener('mousedown', (e) => {
+  if (!spaceDown || e.button !== 0) return;
+  const sc = e.target.closest && e.target.closest('.g-scroll, .dv-scroll');
+  if (!sc) return;
+  e.preventDefault();
+  e.stopPropagation(); // não arrasta barras nem abre tarefas
+  panning = { sc, x: e.clientX, y: e.clientY, l: sc.scrollLeft, t: sc.scrollTop };
+  document.body.classList.add('panning');
+}, true);
+window.addEventListener('mousemove', (e) => {
+  if (!panning) return;
+  panning.sc.scrollLeft = panning.l - (e.clientX - panning.x);
+  panning.sc.scrollTop = panning.t - (e.clientY - panning.y);
+});
+window.addEventListener('mouseup', () => {
+  if (!panning) return;
+  justPanned = true;
+  setTimeout(() => { justPanned = false; }, 0);
+  panning = null;
+  document.body.classList.remove('panning');
+}, true);
+document.addEventListener('click', (e) => { if (justPanned || spaceDown) { e.stopPropagation(); e.preventDefault(); } }, true);
 
 function renderTimeline(c) {
   c.className = 'fill';
@@ -1462,7 +1535,7 @@ function renderTimeline(c) {
       </div>
       <button class="btn" data-action="${anyOpen ? 'ov-collapse-all' : 'ov-expand-all'}">${anyOpen ? 'Recolher tudo' : 'Expandir tudo'}</button>
       <div class="spacer"></div>
-      <span class="muted small hide-narrow">Clique num projeto para abrir o cronograma dele · ◆ = entrega</span>
+      <span class="muted small hide-narrow" title="${NAV_HELP}">Clique num projeto para abrir o cronograma dele · ◆ = entrega · ⌘ + rolagem muda o zoom</span>
       ${zoomSeg(prefs.ovZoom, 'ov-zoom')}
       <button class="btn" data-action="ov-today">Hoje</button>
     </div>
@@ -1472,8 +1545,9 @@ function renderTimeline(c) {
     host.innerHTML = '<div class="empty-hero small"><p>Nenhum projeto para mostrar com esse filtro.</p></div>';
     return;
   }
+  const focus = ganttFocus; ganttFocus = null;
   Gantt.renderOverview(host, {
-    projects, tasks, zoom: prefs.ovZoom, expanded: prefs.ovExpanded,
+    projects, tasks, zoom: prefs.ovZoom, expanded: prefs.ovExpanded, focus,
     meetings: (S.meetings || []).filter((m) => ids.has(m.projectId)),
     projectInfo: (p) => ({ progress: projectProgress(p.id), isGroup }),
   });
@@ -1582,9 +1656,9 @@ function renderGanttTab(p, b) {
       <button class="btn" data-action="gantt-today">Hoje</button>
     </div>
     <div id="ganttHost" class="gantt-host"></div>
-    <p class="muted small gantt-help">Arraste as barras para mudar datas · puxe as bordas para mudar a duração · arraste a bolinha ● da ponta até outra tarefa para criar dependência · clique numa seta para removê-la · ＋ na linha cria subtarefa</p>`;
+    <p class="muted small gantt-help">Arraste as barras para mudar datas · puxe as bordas para mudar a duração · arraste a bolinha ● da ponta até outra tarefa para criar dependência · clique numa seta para removê-la · ＋ na linha cria subtarefa · ${NAV_HELP}</p>`;
   const host = $('#ganttHost');
-  if (!tasks.length) {
+  if (!tasks.length && !(S.meetings || []).some((m) => m.projectId === p.id)) {
     host.innerHTML = `<div class="empty-hero small">
       <h2>Monte o cronograma</h2>
       <p>Adicione tarefas (com início e fim) e entregas (marcos com data única). Elas aparecem aqui no Gantt e no Calendário.</p>
@@ -1592,9 +1666,12 @@ function renderGanttTab(p, b) {
       <button class="btn" data-action="new-task" data-type="entrega">◆ Entrega</button></div></div>`;
     return;
   }
+  const focus = ganttFocus; ganttFocus = null;
   Gantt.render(host, {
-    projectId: p.id, color: p.color, tasks, zoom: prefs.zoom, collapsed: prefs.collapsed,
+    projectId: p.id, color: p.color, tasks, zoom: prefs.zoom, collapsed: prefs.collapsed, focus,
     meetings: (S.meetings || []).filter((m) => m.projectId === p.id),
+    onMeetEdit: (m) => meetingModal(meeting(m.id)),
+    onMeetChange: (m, patch) => { const x = meeting(m.id); if (!x) return; Object.assign(x, patch); syncMeetingEntries(); commit(); },
     onEdit: (t) => taskModal(t),
     onChange: (t, patch) => { TaskTree.move(S.tasks, t, patch.start, patch.end); commit(); },
     onLink: (fromId, toId) => {
@@ -1873,7 +1950,7 @@ function taskModal(t, defaults = {}) {
     const parent = defaults.parentId ? task(defaults.parentId) : null;
     const start = defaults.date || (parent ? parent.start : today);
     const end = defaults.date ? start : parent ? taskEnd(parent) : U.addDays(start, 4);
-    t = { projectId: parent ? parent.projectId : pid, parentId: parent ? parent.id : null, deps: [], type: defaults.type || 'tarefa', title: '', start, end: defaults.type === 'entrega' ? start : end, progress: 0, done: false, notes: '' };
+    t = { projectId: parent ? parent.projectId : pid, parentId: parent ? parent.id : null, deps: [], type: defaults.type || 'tarefa', title: defaults.title || '', start, end: defaults.type === 'entrega' ? start : end, progress: 0, done: false, notes: '' };
   }
   const tags = [...(t.tags || [])];
   const links = (t.links || []).map((l) => ({ ...l }));
@@ -2043,6 +2120,7 @@ function meetingModal(m, defaults = {}) {
     const pid = (linked && linked.projectId) || defaults.projectId || (view.name === 'project' ? view.projectId : prefs.calProject) || activeProjects()[0]?.id || S.projects[0]?.id;
     m = { projectId: pid, title: '', date: defaults.date || U.todayKey(), start: `${U.pad(h)}:00`, end: `${U.pad(Math.min(23, h + 1))}:00`,
       link: '', location: '', participants: '', notes: '', remind: 10, logHours: true, taskId: linked ? linked.id : null };
+    m.title = defaults.title || '';
   }
   const { el } = modal({
     title: isNew ? 'Nova reunião' : 'Editar reunião',
@@ -2558,7 +2636,16 @@ const ACTIONS = {
 
   'h-period': (el) => { prefs.hPeriod = el.dataset.p; savePrefs(); renderContent(); },
   'new-entry': () => entryModal(),
-  'new-meeting': (el) => meetingModal(null, { projectId: el.dataset.project || null, date: el.dataset.date || null, taskId: el.dataset.task || null }),
+  'new-meeting': (el) => {
+    let date = el.dataset.date || null;
+    const t = el.dataset.task ? task(el.dataset.task) : null;
+    if (t && !date) {
+      const inDay = (view.name === 'project' && prefs.zoom === 'horas') || (view.name === 'timeline' && prefs.ovZoom === 'horas');
+      const today = U.todayKey();
+      date = inDay ? dayDate() : t.start > today ? t.start : today > taskEnd(t) ? taskEnd(t) : today;
+    }
+    meetingModal(null, { projectId: el.dataset.project || null, date, taskId: el.dataset.task || null });
+  },
   'edit-meeting': (el) => { const m = meeting(el.dataset.id); if (m) meetingModal(m); },
   'meeting-join': (el) => { const m = meeting(el.dataset.id); if (m && m.link) openLink(m.link); },
   'edit-entry': (el) => entryModal(S.timeEntries.find((e) => e.id === el.dataset.id)),
