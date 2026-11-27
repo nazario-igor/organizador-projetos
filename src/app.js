@@ -1571,6 +1571,7 @@ function renderGanttTab(p, b) {
     <div class="toolbar">
       <button class="btn primary" data-action="new-task" data-type="tarefa">＋ Tarefa</button>
       <button class="btn" data-action="new-task" data-type="entrega">◆ Entrega</button>
+      <button class="btn" data-action="new-meeting" data-project="${p.id}">◷ Reunião</button>
       <div class="spacer"></div>
       ${tasks.some((t) => t.parentId) ? `<div class="seg">
         <button data-action="gantt-expand-all" title="Expandir todos os grupos">Expandir tudo</button>

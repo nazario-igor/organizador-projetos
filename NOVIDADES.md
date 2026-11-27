@@ -2,6 +2,10 @@
 
 Cada versão tem uma seção `## x.y.z`. O texto dela aparece no aviso de atualização do app.
 
+## 1.3.3
+
+- Botão **◷ Reunião** no cronograma do projeto (zooms Dias, Semanas e Meses), no topo e no fim da lista
+
 ## 1.3.2
 
 **Reuniões no cronograma e ligadas a tarefas.**

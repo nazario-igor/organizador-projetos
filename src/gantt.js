@@ -176,7 +176,7 @@ const Gantt = (() => {
       <div class="g-scroll" style="--c:${color}">
         <div class="g-inner" style="width:${LABEL_W + width}px">
           <div class="g-head">
-            <div class="g-label g-corner">Tarefas e entregas</div>
+            <div class="g-label g-corner">Tarefas, entregas e reuniões</div>
             <div class="g-scale" style="width:${width}px">${headerHtml(start, days, dayW, zoom)}</div>
           </div>
           <div class="g-body">
@@ -197,6 +197,7 @@ const Gantt = (() => {
               <div class="g-label">
                 <button class="link-btn" data-action="new-task" data-type="tarefa">＋ Tarefa</button>
                 <button class="link-btn" data-action="new-task" data-type="entrega">＋ Entrega</button>
+                <button class="link-btn" data-action="new-meeting" data-project="${projectId}">＋ Reunião</button>
               </div>
               <div class="g-track" style="width:${width}px"></div>
             </div>
