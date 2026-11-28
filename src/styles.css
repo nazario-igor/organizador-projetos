@@ -890,3 +890,11 @@ body.panning, body.panning * { cursor: grabbing !important; user-select: none; }
 .zl { display: inline-flex; gap: 2px; margin-left: 6px; vertical-align: middle; }
 .zl i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: .25; }
 .zl i.on { opacity: 1; }
+
+/* Tarefas decorrentes de reuniões */
+.origin-line { margin: -4px 0 10px; font-size: 12.5px; color: var(--muted); }
+.derived-list { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.derived-t.done { color: var(--muted); text-decoration: line-through; }
+.pauta-items { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 8px; align-self: stretch; }
+.pauta-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+.pauta-items .btn { align-self: flex-start; margin-top: 4px; }

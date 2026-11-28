@@ -123,6 +123,7 @@ const Gantt = (() => {
           <span class="g-caret-sp"></span><span class="meet-ic" title="Reunião">◷</span>
           <button class="g-title${past ? ' done' : ''}" data-action="edit-meeting" data-id="${m.id}" title="${U.esc(m.title)}">${U.esc(m.title)}</button>
           ${m.link && !past ? `<button class="meet-join" data-action="meeting-join" data-id="${m.id}" title="${U.esc(m.link)}">Entrar ↗</button>` : ''}
+          <button class="g-add" data-action="new-task-from-meeting" data-id="${m.id}" title="Adicionar tarefa decorrente desta reunião">＋</button>
           <span class="g-dates">${U.fmtDate(m.date)} · ${m.start}</span>
         </div>
         <div class="g-track" style="width:${width}px">

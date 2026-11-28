@@ -2,6 +2,14 @@
 
 Cada versão tem uma seção `## x.y.z`. O texto dela aparece no aviso de atualização do app.
 
+## 1.3.7
+
+**Tarefas decorrentes de reuniões.**
+
+- **＋ ao lado da reunião** (no cronograma e na visão Horas): cria uma tarefa que saiu dela, já no dia seguinte e como subtarefa da tarefa ligada à reunião
+- **Pauta vira tarefa:** na janela da reunião, cada item "- [ ]" pendente tem o botão **→ tarefa**, e há **Criar tarefas dos itens pendentes**; o item fica marcado na pauta para não duplicar
+- **Ligação nos dois lados:** a reunião lista as tarefas decorrentes (e quais já estão feitas); a tarefa mostra a **Origem** e abre a reunião com um clique; o cartão da reunião e o PDF também mostram
+
 ## 1.3.6
 
 - **Painel:** a tarefa concluída hoje continua no lugar, riscada, até o fim do dia; some só no dia seguinte (e desmarcar volta ao normal)
